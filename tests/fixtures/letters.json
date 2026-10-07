@@ -1,0 +1,23 @@
+[
+  {
+    "id": "letter-001",
+    "category": "cover_letter",
+    "company": "Our Future Health",
+    "role": "Data Engineer",
+    "date": "2026-01-01",
+    "status": "final",
+    "text": "Dear Hiring Manager, ...",
+    "source": "fixture"
+  },
+  {
+    "id": "letter-002",
+    "category": "cover_letter",
+    "company": "BBC",
+    "role": "Senior Software Engineer",
+    "date": "2026-03-06",
+    "status": "draft",
+    "text": "To whom it may concern, ...",
+    "source": "fixture",
+    "notes": "Fixture draft letter."
+  }
+]

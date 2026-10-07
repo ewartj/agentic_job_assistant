@@ -1,0 +1,37 @@
+[
+  {
+    "id": "cv-001",
+    "category": "project",
+    "text": "Provisioned cloud infrastructure on AWS with Terraform.",
+    "source": "fixture",
+    "tags": ["Terraform", "AWS", "IaC"]
+  },
+  {
+    "id": "cv-002",
+    "category": "project",
+    "text": "Wrote a few Terraform modules for a side project.",
+    "source": "fixture",
+    "tags": ["personal project"]
+  },
+  {
+    "id": "cv-003",
+    "category": "project",
+    "text": "Built R Shiny dashboards for clinicians.",
+    "source": "fixture",
+    "tags": ["visualisation", "dashboards"]
+  },
+  {
+    "id": "cv-004",
+    "category": "experience",
+    "text": "Led research projects and wrote unit testing guides.",
+    "source": "fixture",
+    "tags": ["research", "documentation"]
+  },
+  {
+    "id": "cv-005",
+    "category": "experience",
+    "text": "Mentored junior engineers on Python best practices.",
+    "source": "fixture",
+    "tags": ["mentoring", "Python"]
+  }
+]
