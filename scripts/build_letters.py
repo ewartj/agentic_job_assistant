@@ -1,95 +1,29 @@
-"""Build data/letters.json from the cover letters in the Jobs folder.
+"""Build data/letters.json from the cover letters listed in data/letters.yaml.
 
-Re-run after adding a letter: add a row to LETTERS, then
-    python scripts/build_letters.py
-Stdlib only - reads .docx / .odt by unzipping the XML.
+Add a letter: add an entry to data/letters.yaml, then
+    uv run python scripts/build_letters.py [--config path/to/letters.yaml]
+See letters.example.yaml for the format. Reads .docx / .odt by unzipping the XML.
 """
+import argparse
 import html
 import json
 import re
+import sys
 import zipfile
 from pathlib import Path
 
-JOBS_DIR = Path(r"C:\Users\cacaw\OneDrive\Documents\mine\Jobs")  # sources are relative to this
-OUT = Path(__file__).resolve().parent.parent / "data" / "letters.json"
+import yaml
 
-# One row per *final* letter. Duplicates/earlier drafts are deliberately left out.
-# category: cover_letter | motivation (short "why us" answer) | application_answers
-# outcome (optional, when known): e.g. rejected | interview | offer
-LETTERS = [
-    dict(file="2026/ai/cover_letter_google_expanded.docx", company="Google",
-         role="Software Engineer II, Health and Home Infrastructure", date="2026-04-11",
-         category="cover_letter", status="final"),
-    dict(file="2026/ai/cover_letter_nhscfa.docx", company="NHS Counter Fraud Authority",
-         role="Principal Data Scientist", date="2026-04-11",
-         category="cover_letter", status="draft", reflow=True,
-         notes="Contains unfinished fragments ('cosupervising???', '# leading and mentoring')."),
-    dict(file="2026/ai security institute/ai_security_cover_letter.docx", company="AI Security Institute",
-         role="Software Engineer - Core Technology", date=None,
-         category="cover_letter", status="final"),
-    dict(file="2026/ai security institute/why here.docx", company="AI Security Institute",
-         role="Software Engineer - Core Technology", date=None,
-         category="motivation", status="final"),
-    dict(file="2026/aiAccelerator/Jonathan_Sheldon_Cover_Letter_iAI.docx", company="Incubator for AI (i.AI)",
-         role="Applied AI Engineer", date=None,
-         category="cover_letter", status="final"),
-    dict(file="2026/bbc/Document Copy.docx", company="BBC",
-         role="Senior Software Engineer, Machine Learning Enablement", date="2026-03-06",
-         category="cover_letter", status="final",
-         notes="Opening line says 'Senior Data Engineer' - copy-paste slip."),
-    dict(file="2026/bbc/Document1.docx", company="BBC",
-         role="Senior Software Engineer, Machine Learning Enablement", date="2026-03-07",
-         category="application_answers", status="draft",
-         notes="Application-form answers (DevOps/MLOps, AWS, end-to-end MLOps). Includes rough notes."),
-    dict(file="2026/GEL/Cover Letter.docx", company="Genomics England",
-         role="Software Engineer Python (Research Acquisition and Processing)", date=None,
-         category="cover_letter", status="final"),
-    dict(file="2026/GSTT/cover_letter.docx", company="Guy's and St Thomas' NHS Foundation Trust",
-         role="Senior Data Engineer, AI Centre for Value-Based Healthcare", date="2026-02-20",
-         category="cover_letter", status="final",
-         notes="Mentions SAFEHR, which is UCLH's programme - possible copy-paste slip."),
-    dict(file="2026/Kraken/Why Kraken.docx", company="Kraken",
-         role=None, date=None,
-         category="motivation", status="final"),
-    dict(file="2026/OurFuturehealth/Document1.docx", company="Our Future Health",
-         role="Senior Data Scientist", date="2026-01-21",
-         category="cover_letter", status="draft",
-         notes="Final paragraph ends mid-sentence."),
-    dict(file="2026/OurFutureHealth2/Jonathan_Sheldon_Cover_Letter_OurFutureHealth_1.odt", company="Our Future Health",
-         role="Data Engineer (Bioinformatics), Clinical Research Recruitment Service", date=None,
-         category="cover_letter", status="final"),
-    dict(file="2026/Ucl/Cover Letter.docx", company="University College London Hospitals (SAFEHR)",
-         role="Senior Software Engineer (Data & AI Enablement)", date=None,
-         category="cover_letter", status="final"),
-    # --- Earlier years ---
-    dict(file="2025/GEL/Dr E J Sheldon.docx", company="Genomics England",
-         role="Software Engineer - Python", date="2025",
-         category="cover_letter", status="final"),
-    dict(file="2024/GSTT/Document.docx", company="Guy's and St Thomas' NHS Foundation Trust",
-         role="Senior Clinical Scientist in Artificial Intelligence", date="2024-05-24",
-         category="cover_letter", status="final",
-         notes="Ends with rough bullet notes for the patient safety question."),
-    dict(file="2022/GOSH/Support statment.docx", company="Great Ormond Street Hospital",
-         role="Research Software Engineer", date="2022",
-         category="cover_letter", status="final", outcome="offer",
-         notes="Supporting statement plus 'GOSH Always values' answer. The application that led to the current role."),
-    dict(file="2022/nca/Second NCA Application.docx", company="National Crime Agency",
-         role=None, date="2022",
-         category="application_answers", status="final",
-         notes="Civil service criteria answers: coding/testing, software skills, data cleansing, scalable design."),
-    dict(file="2022/nca/Nca application.docx", company="National Crime Agency",
-         role=None, date="2022",
-         category="application_answers", status="draft",
-         notes="STAR answers (NLP, data visualisation for non-technical audiences, collaboration, sensitive data) mixed with rough notes."),
-    dict(file="2022/APHA/Changing and Improving.docx", company="Animal and Plant Health Agency",
-         role="Bioinformatics Scientific Programming Lead", date="2022",
-         category="application_answers", status="final",
-         notes="Civil service Success Profiles behaviours: Changing and Improving, Communicating and Influencing, Working Together. Reusable for other civil service roles."),
-]
+ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_CONFIG = ROOT / "data" / "letters.yaml"
+OUT = ROOT / "data" / "letters.json"
+
+REQUIRED = ("file", "company", "category", "status")
+OPTIONAL = ("role", "date", "outcome", "notes", "reflow", "keep_case")
+CATEGORIES = {"cover_letter", "motivation", "application_answers"}
+STATUSES = {"final", "draft"}
 
 SALUTATION = re.compile(r"^(dear|to whom)", re.IGNORECASE)
-# Words that stay capitalised when re-joining hard-wrapped lines.
-KEEP_CASE = {"Thermiator", "Intelligent", "Healthcare", "Interns", "S3", "Gitlab", "Python", "Podman", "Airflow"}
 
 
 def read_text(path: Path) -> str:
@@ -105,15 +39,18 @@ def read_text(path: Path) -> str:
     return html.unescape(re.sub(r"<[^>]+>", "", xml)).replace("\ufeff", "")
 
 
-def reflow(text: str) -> str:
-    """Join lines that were hard-wrapped mid-sentence (with a capitalised next word)."""
+def reflow(text: str, keep_case: set[str]) -> str:
+    """Join lines that were hard-wrapped mid-sentence (with a capitalised next word).
+
+    The wrapped-on word is lowercased unless it's in `keep_case` (proper nouns).
+    """
     lines = [l.strip() for l in text.splitlines() if l.strip()]
     out: list[str] = []
     for line in lines:
         if (out and not re.search(r"[.!?:;)]$", out[-1]) and not SALUTATION.match(out[-1])
                 and not line.startswith("#")):
             first, _, rest = line.partition(" ")
-            if first not in KEEP_CASE and first[:1].isupper() and first[1:].islower():
+            if first not in keep_case and first[:1].isupper() and first[1:].islower():
                 first = first.lower()
             out[-1] = f"{out[-1]} {first} {rest}".rstrip()
         else:
@@ -121,7 +58,7 @@ def reflow(text: str) -> str:
     return "\n\n".join(out)
 
 
-def clean(text: str, do_reflow: bool) -> str:
+def clean(text: str, do_reflow: bool, keep_case: set[str]) -> str:
     lines = text.splitlines()
     # Drop name/address/phone header above the salutation.
     for i, line in enumerate(lines):
@@ -130,22 +67,62 @@ def clean(text: str, do_reflow: bool) -> str:
             break
     text = "\n".join(lines)
     if do_reflow:
-        return reflow(text)
+        return reflow(text, keep_case)
     return re.sub(r"\n\s*\n+", "\n\n", text).strip()
 
 
+def load_config(path: Path) -> tuple[Path, list[dict]]:
+    """Read and validate the manifest, reporting every problem at once."""
+    config = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    jobs_dir = Path(config.get("jobs_dir", ""))
+    letters = config.get("letters") or []
+
+    errors = []
+    if not jobs_dir.is_dir():
+        errors.append(f"jobs_dir does not exist: {jobs_dir}")
+    for n, row in enumerate(letters, start=1):
+        where = f"letter {n} ({row.get('file', '?')})"
+        missing = [key for key in REQUIRED if not row.get(key)]
+        unknown = set(row) - set(REQUIRED) - set(OPTIONAL)
+        if missing:
+            errors.append(f"{where}: missing {', '.join(missing)}")
+        if unknown:
+            errors.append(f"{where}: unknown keys {', '.join(sorted(unknown))}")
+        if row.get("category") and row["category"] not in CATEGORIES:
+            errors.append(f"{where}: category must be one of {sorted(CATEGORIES)}")
+        if row.get("status") and row["status"] not in STATUSES:
+            errors.append(f"{where}: status must be one of {sorted(STATUSES)}")
+        if "keep_case" in row:
+            keep_case = row["keep_case"]
+            if not (isinstance(keep_case, list) and all(isinstance(w, str) for w in keep_case)):
+                errors.append(f"{where}: keep_case must be a list of words")
+            if not row.get("reflow"):
+                errors.append(f"{where}: keep_case only applies with reflow: true")
+        if row.get("file") and jobs_dir.is_dir() and not (jobs_dir / row["file"]).is_file():
+            errors.append(f"{where}: file not found under jobs_dir")
+    if errors:
+        sys.exit("Invalid config " + str(path) + ":\n  " + "\n  ".join(errors))
+    return jobs_dir, letters
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
+    args = parser.parse_args()
+
+    jobs_dir, letters = load_config(args.config)
     entries = []
-    for i, row in enumerate(LETTERS, start=1):
-        path = JOBS_DIR / row["file"]
+    for i, row in enumerate(letters, start=1):
         entries.append({
             "id": f"letter-{i:03d}",
             "category": row["category"],
             "company": row["company"],
-            "role": row["role"],
-            "date": row["date"],
+            "role": row.get("role"),
+            # Guard against unquoted YAML dates/years becoming date objects or ints.
+            "date": str(row["date"]) if row.get("date") is not None else None,
             "status": row["status"],
-            "text": clean(read_text(path), row.get("reflow", False)),
+            "text": clean(read_text(jobs_dir / row["file"]), row.get("reflow", False),
+                          set(row.get("keep_case", []))),
             "source": row["file"],
             **({"outcome": row["outcome"]} if row.get("outcome") else {}),
             **({"notes": row["notes"]} if row.get("notes") else {}),

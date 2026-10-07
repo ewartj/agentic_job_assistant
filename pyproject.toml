@@ -17,3 +17,9 @@ cv-server = "cv_server:main"
 [build-system]
 requires = ["uv_build>=0.12.19,<0.13.0"]
 build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pyyaml>=6.0.3",
+]

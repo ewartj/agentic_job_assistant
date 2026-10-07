@@ -4,13 +4,15 @@ Note: mcp 2.x renamed FastMCP -> MCPServer. Most tutorials (and the
 Phase 2 plan) still say `from mcp.server.fastmcp import FastMCP`.
 """
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any
 
 from mcp.server.mcpserver import MCPServer
 
-DATA_DIR = Path(__file__).resolve().parents[2] / "data"
+# data/ is gitignored (personal data); tests point this at tests/fixtures instead.
+DATA_DIR = Path(os.environ.get("CV_SERVER_DATA_DIR", Path(__file__).resolve().parents[2] / "data"))
 
 mcp = MCPServer("cv-server")
 
