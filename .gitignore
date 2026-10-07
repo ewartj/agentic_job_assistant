@@ -218,3 +218,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Personal CV / letter data - keep out of public repos
+data/
+.venv/
+__pycache__/

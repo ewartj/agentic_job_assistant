@@ -15,6 +15,7 @@ OUT = Path(__file__).resolve().parent.parent / "data" / "letters.json"
 
 # One row per *final* letter. Duplicates/earlier drafts are deliberately left out.
 # category: cover_letter | motivation (short "why us" answer) | application_answers
+# outcome (optional, when known): e.g. rejected | interview | offer
 LETTERS = [
     dict(file="2026/ai/cover_letter_google_expanded.docx", company="Google",
          role="Software Engineer II, Health and Home Infrastructure", date="2026-04-11",
@@ -60,6 +61,30 @@ LETTERS = [
     dict(file="2026/Ucl/Cover Letter.docx", company="University College London Hospitals (SAFEHR)",
          role="Senior Software Engineer (Data & AI Enablement)", date=None,
          category="cover_letter", status="final"),
+    # --- Earlier years ---
+    dict(file="2025/GEL/Dr E J Sheldon.docx", company="Genomics England",
+         role="Software Engineer - Python", date="2025",
+         category="cover_letter", status="final"),
+    dict(file="2024/GSTT/Document.docx", company="Guy's and St Thomas' NHS Foundation Trust",
+         role="Senior Clinical Scientist in Artificial Intelligence", date="2024-05-24",
+         category="cover_letter", status="final",
+         notes="Ends with rough bullet notes for the patient safety question."),
+    dict(file="2022/GOSH/Support statment.docx", company="Great Ormond Street Hospital",
+         role="Research Software Engineer", date="2022",
+         category="cover_letter", status="final", outcome="offer",
+         notes="Supporting statement plus 'GOSH Always values' answer. The application that led to the current role."),
+    dict(file="2022/nca/Second NCA Application.docx", company="National Crime Agency",
+         role=None, date="2022",
+         category="application_answers", status="final",
+         notes="Civil service criteria answers: coding/testing, software skills, data cleansing, scalable design."),
+    dict(file="2022/nca/Nca application.docx", company="National Crime Agency",
+         role=None, date="2022",
+         category="application_answers", status="draft",
+         notes="STAR answers (NLP, data visualisation for non-technical audiences, collaboration, sensitive data) mixed with rough notes."),
+    dict(file="2022/APHA/Changing and Improving.docx", company="Animal and Plant Health Agency",
+         role="Bioinformatics Scientific Programming Lead", date="2022",
+         category="application_answers", status="final",
+         notes="Civil service Success Profiles behaviours: Changing and Improving, Communicating and Influencing, Working Together. Reusable for other civil service roles."),
 ]
 
 SALUTATION = re.compile(r"^(dear|to whom)", re.IGNORECASE)
@@ -68,8 +93,13 @@ KEEP_CASE = {"Thermiator", "Intelligent", "Healthcare", "Interns", "S3", "Gitlab
 
 
 def read_text(path: Path) -> str:
-    member = "word/document.xml" if path.suffix == ".docx" else "content.xml"
-    xml = zipfile.ZipFile(path).read(member).decode("utf-8")
+    archive = zipfile.ZipFile(path)
+    if path.suffix == ".odt":
+        member = "content.xml"
+    else:
+        # Usually word/document.xml, but some Word versions write word/document22.xml.
+        member = next(n for n in archive.namelist() if re.fullmatch(r"word/document\d*\.xml", n))
+    xml = archive.read(member).decode("utf-8")
     xml = re.sub(r"</w:p>|</text:p>|</text:h>|<w:br/>|<text:line-break/>", "\n", xml)
     xml = re.sub(r"<w:tab/>|<text:tab/>", "\t", xml)
     return html.unescape(re.sub(r"<[^>]+>", "", xml)).replace("\ufeff", "")
@@ -117,6 +147,7 @@ def main() -> None:
             "status": row["status"],
             "text": clean(read_text(path), row.get("reflow", False)),
             "source": row["file"],
+            **({"outcome": row["outcome"]} if row.get("outcome") else {}),
             **({"notes": row["notes"]} if row.get("notes") else {}),
         })
     OUT.write_text(json.dumps(entries, indent=2, ensure_ascii=False), encoding="utf-8")
