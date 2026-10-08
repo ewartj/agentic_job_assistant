@@ -44,7 +44,7 @@ def reflow(text: str, keep_case: set[str]) -> str:
 
     The wrapped-on word is lowercased unless it's in `keep_case` (proper nouns).
     """
-    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    lines = [raw.strip() for raw in text.splitlines() if raw.strip()]
     out: list[str] = []
     for line in lines:
         if (out and not re.search(r"[.!?:;)]$", out[-1]) and not SALUTATION.match(out[-1])
