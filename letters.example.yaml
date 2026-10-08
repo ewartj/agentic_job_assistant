@@ -1,0 +1,28 @@
+# Example manifest for scripts/build_letters.py.
+# Copy to data/letters.yaml (gitignored) and list your own letters:
+#     uv run python scripts/build_letters.py
+#
+# Per letter:
+#   file      (required) path relative to jobs_dir; .docx or .odt
+#   company   (required)
+#   category  (required) cover_letter | motivation | application_answers
+#   status    (required) final | draft
+#   role, date, outcome, notes  (optional)
+#   reflow    (optional) true to re-join lines hard-wrapped mid-sentence
+#   keep_case (optional, with reflow) words to leave capitalised when re-joining, e.g. proper nouns
+# Quote dates ('2026-04-11', '2022') or YAML turns them into dates/ints.
+
+jobs_dir: 'C:\Users\you\Documents\Jobs'
+letters:
+- file: 2026/acme/cover_letter.docx
+  company: Acme Health
+  role: Senior Data Engineer
+  date: '2026-03-01'
+  category: cover_letter
+  status: final
+  outcome: interview
+- file: 2026/acme/why_acme.docx
+  company: Acme Health
+  category: motivation
+  status: draft
+  notes: Short "why us" answer from the application form.

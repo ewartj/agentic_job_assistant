@@ -1,0 +1,46 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+# Cancel an in-progress run when a newer commit is pushed to the same branch.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      # Installs uv; Python comes from .python-version, dependencies are cached.
+      - uses: astral-sh/setup-uv@v10.2.0
+
+      # --locked fails if uv.lock is out of date with pyproject.toml.
+      - name: Install dependencies
+        run: uv sync --locked
+
+      # Tests run against tests/fixtures (see tests/conftest.py) - data/ is never in the repo.
+      - name: Run tests
+        run: uv run pytest -v
+
+  # Separate job so a lint failure doesn't hide test results (and both run in parallel).
+  ruff:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+      - name: Install dependencies
+        run: uv sync --locked
+      # Rules are configured in pyproject.toml [tool.ruff.lint].
+      # github format annotates the offending lines in the PR diff.
+      - name: Lint
+        run: uv run ruff check --output-format=github .
