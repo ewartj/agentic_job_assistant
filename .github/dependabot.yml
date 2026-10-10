@@ -1,0 +1,27 @@
+# Dependabot opens PRs when newer versions are released; CI then tests each PR.
+# Only takes effect once this file is on the default branch (master).
+version: 2
+updates:
+  # Actions pinned in .github/workflows/ (e.g. astral-sh/setup-uv@v10.2.0).
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: ci
+
+  # Python dependencies in pyproject.toml / uv.lock.
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      # One PR for all minor/patch bumps; major versions get their own PRs.
+      python-minor-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: deps
+    open-pull-requests-limit: 5
