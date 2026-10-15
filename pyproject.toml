@@ -13,10 +13,15 @@ dependencies = [
 
 [project.scripts]
 cv-server = "cv_server:main"
+job-agent = "job_agent:main"
 
 [build-system]
 requires = ["uv_build>=0.12.19,<0.14.0"]
 build-backend = "uv_build"
+
+[tool.uv.build-backend]
+# Two packages under src/: the MCP server and the agent that uses it.
+module-name = ["cv_server", "job_agent"]
 
 [dependency-groups]
 dev = [
