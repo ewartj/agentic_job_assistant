@@ -4,34 +4,79 @@
     "category": "project",
     "text": "Provisioned cloud infrastructure on AWS with Terraform.",
     "source": "fixture",
-    "tags": ["Terraform", "AWS", "IaC"]
+    "tags": [
+      "Terraform",
+      "AWS",
+      "IaC"
+    ]
   },
   {
     "id": "cv-002",
     "category": "project",
     "text": "Wrote a few Terraform modules for a side project.",
     "source": "fixture",
-    "tags": ["personal project"]
+    "tags": [
+      "personal project"
+    ]
   },
   {
     "id": "cv-003",
     "category": "project",
     "text": "Built R Shiny dashboards for clinicians.",
     "source": "fixture",
-    "tags": ["visualisation", "dashboards"]
+    "tags": [
+      "visualisation",
+      "dashboards"
+    ]
   },
   {
     "id": "cv-004",
     "category": "experience",
     "text": "Led research projects and wrote unit testing guides.",
     "source": "fixture",
-    "tags": ["research", "documentation"]
+    "tags": [
+      "research",
+      "documentation"
+    ]
   },
   {
     "id": "cv-005",
     "category": "experience",
     "text": "Mentored junior engineers on Python best practices.",
     "source": "fixture",
-    "tags": ["mentoring", "Python"]
+    "tags": [
+      "mentoring",
+      "Python"
+    ]
+  },
+  {
+    "id": "cv-006",
+    "category": "project",
+    "text": "Published Python code openly and presented it for peer review.",
+    "source": "fixture",
+    "tags": [
+      "open source code",
+      "peer review"
+    ]
+  },
+  {
+    "id": "cv-007",
+    "category": "experience",
+    "text": "Introduced pull requests and automated Python tests for the team.",
+    "source": "fixture",
+    "tags": [
+      "code review",
+      "testing"
+    ]
+  },
+  {
+    "id": "cv-008",
+    "category": "project",
+    "text": "Switched data pre-processing from CSV to Parquet files.",
+    "source": "fixture",
+    "tags": [
+      "Parquet",
+      "performance"
+    ]
   }
 ]
