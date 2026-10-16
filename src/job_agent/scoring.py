@@ -2,6 +2,7 @@
 
     uv run job-score bbc_mle            # every run of data/evals/runs/bbc_mle.jsonl
     uv run job-score bbc_mle --runs     # also one line per run
+    uv run job-score bbc_mle --since 2026-10-16T15:50   # only runs started at or after this
 
 The answer key is data/evals/<posting>.yaml:
 
@@ -102,6 +103,12 @@ def score_run(run: dict[str, Any], requirements: list[Requirement]) -> RunScore:
     )
 
 
+def since(runs: list[dict[str, Any]], start: str | None) -> list[dict[str, Any]]:
+    """Runs started at or after `start`. ISO timestamps sort as strings, so a date
+    ("2026-10-16") or any prefix of a timestamp works."""
+    return [r for r in runs if start is None or r["started_at"] >= start]
+
+
 def pct(value: float | None) -> str:
     return "  -  " if value is None else f"{value:5.0%}"
 
@@ -160,6 +167,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Score agent runs against your answer key.")
     parser.add_argument("posting", help="posting name, e.g. bbc_mle")
     parser.add_argument("--runs", action="store_true", help="also show one line per run")
+    parser.add_argument("--since", metavar="TIME", help="only runs started at or after this, e.g. 2026-10-16T15:50")
     args = parser.parse_args()
 
     case_file = EVALS_DIR / f"{args.posting}.yaml"
@@ -171,4 +179,7 @@ def main() -> None:
     known_ids = {e["id"] for e in json.loads(CV_FILE.read_text(encoding="utf-8"))}
     requirements = load_case(case_file, known_ids)
     runs = [json.loads(line) for line in runs_file.read_text(encoding="utf-8").splitlines() if line.strip()]
+    runs = since(runs, args.since)
+    if not runs:
+        raise SystemExit(f"No runs since {args.since}")
     report([score_run(run, requirements) for run in runs], requirements, args.runs)

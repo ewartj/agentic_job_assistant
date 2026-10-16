@@ -1,7 +1,7 @@
 """Scoring agent runs against an answer key (job_agent.scoring)."""
 import pytest
 
-from job_agent.scoring import Requirement, load_case, score_run
+from job_agent.scoring import Requirement, load_case, score_run, since
 
 REQUIREMENTS = [
     Requirement("AWS", {"cv-001", "cv-002"}),
@@ -108,3 +108,20 @@ def test_unknown_acceptable_id_is_rejected(tmp_path):
     case.write_text("requirements:\n  - requirement: AWS\n    expected: [cv-001]\n    acceptable: [cv-0099]\n")
     with pytest.raises(SystemExit, match="cv-0099"):
         load_case(case, known_ids={"cv-001"})
+
+
+# --- --since -----------------------------------------------------------------
+
+RUNS = [{"started_at": "2026-10-15T22:50:04"}, {"started_at": "2026-10-16T15:53:35"}]
+
+
+def test_since_keeps_runs_at_or_after_the_time():
+    assert since(RUNS, "2026-10-16T15:53:35") == RUNS[1:]
+
+
+def test_since_accepts_a_date_prefix():
+    assert since(RUNS, "2026-10-16") == RUNS[1:]
+
+
+def test_since_none_keeps_everything():
+    assert since(RUNS, None) == RUNS

@@ -41,6 +41,11 @@ about the user with the id of the evidence it comes from, written like [cv-012].
 Only cite ids you have actually seen. If you find no evidence for a requirement, \
 say so - don't guess.
 
+Besides skills and technologies, also look for evidence of impact and outcomes \
+(e.g. "impact", "rollout", "results"), since these often support several requirements.
+
+Write to the user as "you". Never refer to them in the third person or assume their pronouns.
+
 Finish with a short overall assessment."""
 
 FULL_CONTEXT_SUFFIX = """
