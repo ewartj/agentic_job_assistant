@@ -84,20 +84,32 @@ The answer key is checked when it loads: unknown ids, or an id listed as both `e
 
 ### Findings so far
 
-These come from one real senior ML-engineering posting and a handful of runs, so treat them as indicative.
+These come from one real senior ML-engineering posting, with 2–3 runs per setup, so treat them as indicative. All rows are scored against the same answer key.
 
-| Setup | retrieved | cited | precision |
-|---|---|---|---|
-| Claude, tools, original search | 78% | 65% | 92% |
-| Claude, tools, IDF + phrase search, limit 10 | 83% | 67% | 92% |
-| Claude, full context (no search) | – | 80% | 88% |
-| qwen3.5:9b (local), tools | 74% | 44% | 94% |
+**Current baseline** (current search and prompt):
 
-- **Search versus judgement.** The small local model retrieves almost as much as Claude but cites much less. Its weakness is deciding what counts as evidence, not finding it.
-- **Comparing with full context shows what the search misses.** Entries written as stories (impact, process, leadership) rarely match skill-style queries. That's why the system prompt now also asks the model to look for impact and outcomes.
+| Setup | retrieved | cited | precision | made-up |
+|---|---|---|---|---|
+| Claude Haiku, tools | 96% | 88% | 92% | 0 |
+| Claude Haiku, full context (no search) | – | 88% | 91% | 0 |
+| qwen3.5:9b (local, via Ollama), tools | 87% | 65% | 90% | 0 |
+
+**How the Claude tools setup got there:**
+
+| Change | retrieved | cited |
+|---|---|---|
+| Original keyword search, `limit=5` | 79% | 76% |
+| IDF weighting + phrase bonus, `limit=10` | 84% | 80% |
+| Prompt also asks for impact/outcome evidence | 96% | 88% |
+
+What these show:
+
+- **The search no longer loses anything.** With tools, Claude now cites as much must-cite evidence as when it's given the whole CV (88% both ways). It started 20 points behind.
 - **Ties hide evidence.** Nine CV entries share the tag "code review", so with `limit=5` the later ones were never returned, however good the ranking. Raising the limit fixed that; improving the ranking alone couldn't.
+- **Some evidence has to be asked for.** Entries written as stories (impact, process, leadership) rarely match skill-style queries. Asking the model to also search for impact and outcomes was the single biggest gain.
+- **The small local model's weakness is judgement, not search.** The search fixes helped qwen too: it went from 52% to 65% cited. It still cites much less than Claude from similar retrieved evidence, and it sometimes attaches a real id to the wrong claim. A recall/precision score can't catch that, because the id is valid for the requirement.
+- **Answer keys need judgement too.** A few entries were missed even with the full CV. I moved them from "must cite" to "acceptable" rather than tuning the agent to match my opinion of them.
 - **The agent found real problems in the CV,** such as the same skill described as "in progress" in one place and "used in production" in another.
-- **Precision stays high, at about 92%, and invented ids are rare.** Only one has appeared so far, from the local model.
 
 ## Setup
 
@@ -184,7 +196,7 @@ tests/                     pytest suite and fixtures
 
 ## Next steps
 
-- [ ] Measure the prompt change (impact/outcome searches, second-person writing)
+- [x] Measure the prompt change (impact/outcome searches, second-person writing)
 - [ ] Embedding search alongside keywords, to catch evidence phrased differently from the query
 - [ ] A second posting and answer key, to check the findings generalise
 - [ ] Phase 3: rebuild the agent in LangGraph and compare it on the same evals
