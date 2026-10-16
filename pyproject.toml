@@ -27,6 +27,7 @@ module-name = ["cv_server", "job_agent"]
 
 [dependency-groups]
 dev = [
+    "pre-commit>=4.7.0",
     "pytest>=9.1.1",
     "ruff>=0.16.10",
 ]

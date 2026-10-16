@@ -164,6 +164,12 @@ uv run ruff check .
   - the agent loop, using a scripted fake model;
   - the eval scoring.
 - **GitHub Actions** runs pytest and ruff on every push and pull request.
+- **Secret and personal-data checks** ([.pre-commit-config.yaml](.pre-commit-config.yaml)) run on every commit once installed with `uv run pre-commit install`. In CI, gitleaks also scans the whole git history. The checks block:
+  - API keys and tokens (gitleaks);
+  - private keys;
+  - large files;
+  - anything under `data/` or `.env`;
+  - local paths, private IP addresses and Anthropic keys.
 - **Dependabot** checks the Actions and uv dependencies weekly. Updates are reviewed and merged by hand, never automatically.
 
 ## Layout

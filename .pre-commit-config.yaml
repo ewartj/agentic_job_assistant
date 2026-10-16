@@ -1,0 +1,43 @@
+# Checks that run on every `git commit` (after `uv run pre-commit install`),
+# and in CI on every push. Run them by hand with:  uv run pre-commit run --all-files
+repos:
+  # Secrets: API keys, tokens, private keys, passwords in config files.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: detect-private-key
+      - id: check-added-large-files  # e.g. a stray CV .docx or a model file
+      - id: check-yaml
+
+  # Personal data that isn't a "secret", so gitleaks won't catch it.
+  - repo: local
+    hooks:
+      - id: no-personal-files
+        name: personal data files (data/, .env) must not be committed
+        entry: "data/ and .env hold personal data and are gitignored - unstage them"
+        language: fail
+        files: ^(data/|\.env$)
+
+      - id: no-personal-paths
+        name: no local paths, private IPs or Claude API keys
+        # Real home/OneDrive paths (the C:\Users\you placeholder is allowed),
+        # private network addresses, and Anthropic keys.
+        entry: '(?i)(onedrive|c:\\+users\\+(?!you\\)[a-z]|\b192\.168\.\d|\b10\.\d+\.\d+\.\d+\b|sk-ant-[a-z0-9])'
+        language: pygrep
+        exclude: ^\.pre-commit-config\.yaml$
+
+      # CI only (it needs the full history): scan every commit, not just staged changes.
+      #   uv run pre-commit run --hook-stage manual gitleaks-history
+      - id: gitleaks-history
+        name: gitleaks over the full git history
+        language: golang
+        additional_dependencies: [github.com/zricethezav/gitleaks/v8@v8.30.1]
+        entry: gitleaks git --redact --no-banner
+        pass_filenames: false
+        always_run: true
+        stages: [manual]
