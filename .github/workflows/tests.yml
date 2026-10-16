@@ -44,3 +44,24 @@ jobs:
       # github format annotates the offending lines in the PR diff.
       - name: Lint
         run: uv run ruff check --output-format=github .
+
+  # Secrets and personal data: the same hooks as the local pre-commit check
+  # (.pre-commit-config.yaml), plus a gitleaks scan of the whole history.
+  secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # full history, for gitleaks-history
+      - uses: astral-sh/setup-uv@v10.3.0
+      - name: Install dependencies
+        run: uv sync --locked
+      # The normal gitleaks hook only scans staged changes, so it's skipped here
+      # and replaced by gitleaks-history, which scans every commit.
+      - name: Pre-commit hooks
+        run: uv run pre-commit run --all-files --show-diff-on-failure
+        env:
+          SKIP: gitleaks
+      - name: Gitleaks over full history
+        run: uv run pre-commit run --hook-stage manual gitleaks-history

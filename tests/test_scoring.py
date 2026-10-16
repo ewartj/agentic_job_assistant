@@ -1,5 +1,7 @@
 """Unit tests for the keyword search rules behind get_cv_evidence."""
-from cv_server.server import _score, _terms
+import pytest
+
+from cv_server.server import _score, _terms, idf
 
 
 def entry(text: str, tags: list[str] | None = None) -> dict:
@@ -28,7 +30,7 @@ def test_terms_of_empty_query_is_empty():
 # --- Short terms (<= 2 chars) must match a whole word ------------------------
 
 def test_short_term_matches_whole_word():
-    assert _score(entry("Built R Shiny dashboards"), ["r"]) == 1
+    assert _score(entry("Built R Shiny dashboards"), ["r"]) == idf("r")
 
 
 def test_short_term_does_not_match_inside_a_word():
@@ -39,34 +41,49 @@ def test_short_term_does_not_match_inside_a_word():
 # --- Longer terms match the start of a word ----------------------------------
 
 def test_long_term_matches_word_prefix():
-    assert _score(entry("Wrote unit testing guides"), ["test"]) == 1
+    assert _score(entry("Wrote unit testing guides"), ["test"]) == idf("test")
 
 
 def test_long_term_does_not_match_mid_word():
     assert _score(entry("Entered a coding contest"), ["test"]) == 0
 
 
-# --- Tags outrank text, and each term counts once ----------------------------
+# --- Tags outrank text, and each term counts once (weighted by idf) ----------
 
 def test_tag_match_scores_two():
-    assert _score(entry("Provisioned infrastructure", ["Terraform"]), ["terraform"]) == 2
+    assert _score(entry("Provisioned infrastructure", ["Terraform"]), ["terraform"]) == 2 * idf("terraform")
 
 
 def test_text_only_match_scores_one():
-    assert _score(entry("Used Terraform at home"), ["terraform"]) == 1
+    assert _score(entry("Used Terraform at home"), ["terraform"]) == idf("terraform")
 
 
 def test_match_in_tags_and_text_still_scores_two():
-    assert _score(entry("Used Terraform daily", ["Terraform"]), ["terraform"]) == 2
+    assert _score(entry("Used Terraform daily", ["Terraform"]), ["terraform"]) == 2 * idf("terraform")
 
 
 def test_scores_add_up_across_terms():
-    assert _score(entry("Cloud work", ["Terraform", "AWS"]), ["terraform", "aws"]) == 4
+    score = _score(entry("Cloud work", ["Terraform", "AWS"]), ["terraform", "aws"])
+    assert score == pytest.approx(2 * idf("terraform") + 2 * idf("aws"))
 
 
 def test_matching_is_case_insensitive():
-    assert _score(entry("Deployed on AWS"), _terms("aws")) == 1
+    assert _score(entry("Deployed on AWS"), _terms("aws")) == idf("aws")
 
 
 def test_entry_without_tags_key_is_handled():
-    assert _score({"text": "Terraform modules"}, ["terraform"]) == 1
+    assert _score({"text": "Terraform modules"}, ["terraform"]) == idf("terraform")
+
+
+# --- Adjacent query terms found together score a phrase bonus ----------------
+
+def test_phrase_in_tags_beats_the_words_apart():
+    together = _score(entry("Team practices", ["code review"]), ["code", "review"])
+    apart = _score(entry("Team practices", ["open source code", "peer review"]), ["code", "review"])
+    assert together > apart
+
+
+def test_phrase_bonus_is_the_pairs_mean_idf():
+    words_only = 2 * idf("code") + 2 * idf("review")
+    bonus = 2 * (idf("code") + idf("review")) / 2
+    assert _score(entry("x", ["code review"]), ["code", "review"]) == pytest.approx(words_only + bonus)

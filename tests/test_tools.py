@@ -1,5 +1,5 @@
 """Tool behaviour against the fixture data in tests/fixtures/."""
-from cv_server.server import get_cv_evidence, get_past_letters, list_past_applications
+from cv_server.server import get_cv_evidence, get_past_letters, idf, list_past_applications
 
 
 def ids(results: list[dict]) -> list[str]:
@@ -9,8 +9,22 @@ def ids(results: list[dict]) -> list[str]:
 # --- get_cv_evidence ---------------------------------------------------------
 
 def test_results_are_ranked_by_score():
-    # cv-001 has both terms in its tags (score 4); cv-002 only mentions Terraform in text (1).
+    # cv-001 has both terms in its tags; cv-002 only mentions Terraform in its text.
     assert ids(get_cv_evidence("terraform aws")) == ["cv-001", "cv-002"]
+
+
+def test_exact_phrase_beats_the_same_words_apart():
+    # Both have "code" and "review" in their tags, but only cv-007 has the tag "code review".
+    assert ids(get_cv_evidence("code review"))[:2] == ["cv-007", "cv-006"]
+
+
+def test_rare_terms_outweigh_common_ones():
+    # "python" is in several entries, "parquet" in one: a Parquet tag beats a Python tag.
+    assert ids(get_cv_evidence("python parquet"))[0] == "cv-008"
+
+
+def test_idf_is_positive_even_for_common_terms():
+    assert 0 < idf("python") < idf("parquet")
 
 
 def test_limit_is_respected():

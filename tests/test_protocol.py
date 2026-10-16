@@ -45,7 +45,7 @@ async def test_full_cv_resource():
 
     assert resources == ["cv://full"]
     assert [e["id"] for e in json.loads(content.contents[0].text)] == [
-        "cv-001", "cv-002", "cv-003", "cv-004", "cv-005",
+        "cv-001", "cv-002", "cv-003", "cv-004", "cv-005", "cv-006", "cv-007", "cv-008",
     ]
 
 

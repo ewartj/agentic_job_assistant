@@ -4,9 +4,13 @@ Note: mcp 2.x renamed FastMCP -> MCPServer. Most tutorials (and the
 Phase 2 plan) still say `from mcp.server.fastmcp import FastMCP`.
 """
 import json
+import math
 import os
 import re
+from functools import cache
+from itertools import pairwise
 from pathlib import Path
+from statistics import mean
 from typing import Any
 
 from mcp.server.mcpserver import MCPServer
@@ -32,18 +36,39 @@ def _terms(query: str) -> list[str]:
     return [w for w in words if w not in STOPWORDS]
 
 
-def _score(entry: dict[str, Any], terms: list[str]) -> int:
-    """Tag hits count double; text hits once. Short terms (e.g. "r", "ci") must match a
-    whole word, longer ones match a word prefix so "test" finds "testing"."""
-    text = entry["text"].lower()
-    tags = " | ".join(entry.get("tags", [])).lower()
-    score = 0
-    for term in terms:
-        pattern = rf"\b{re.escape(term)}\b" if len(term) <= 2 else rf"\b{re.escape(term)}"
+def _pattern(words: list[str]) -> str:
+    """Regex for one term, or a phrase of adjacent terms. Short final words (e.g. "r", "ci")
+    must match a whole word; longer ones match a word prefix so "test" finds "testing"."""
+    body = r"\s+".join(re.escape(w) for w in words)
+    return rf"\b{body}\b" if len(words[-1]) <= 2 else rf"\b{body}"
+
+
+def _fields(entry: dict[str, Any]) -> tuple[str, str]:
+    return " | ".join(entry.get("tags", [])).lower(), entry["text"].lower()
+
+
+@cache
+def idf(term: str) -> float:
+    """Inverse document frequency (the BM25 form): rare terms like "parquet" weigh more
+    than common ones like "code". Always positive, even for a term in every entry."""
+    pattern = _pattern([term])
+    df = sum(any(re.search(pattern, f) for f in _fields(entry)) for entry in CV)
+    return math.log(1 + (len(CV) - df + 0.5) / (df + 0.5))
+
+
+def _score(entry: dict[str, Any], terms: list[str]) -> float:
+    """Tag hits count double, text hits once, each weighted by idf. Adjacent query terms
+    found together as a phrase (e.g. "code review") score again, as a bonus."""
+    tags, text = _fields(entry)
+    score = 0.0
+    phrases = [[t] for t in terms] + [[a, b] for a, b in pairwise(terms)]
+    for words in phrases:
+        pattern = _pattern(words)
+        weight = mean(idf(w) for w in words)
         if re.search(pattern, tags):
-            score += 2
+            score += 2 * weight
         elif re.search(pattern, text):
-            score += 1
+            score += weight
     return score
 
 
@@ -70,7 +95,7 @@ def list_past_applications() -> list[dict[str, Any]]:
 
 
 @mcp.tool()
-def get_cv_evidence(query: str, limit: int = 5) -> list[dict[str, Any]]:
+def get_cv_evidence(query: str, limit: int = 10) -> list[dict[str, Any]]:
     """Search the user's CV for evidence supporting one skill, technology or job requirement.
 
     Each result is a single, self-contained claim about the user's experience,
@@ -79,7 +104,8 @@ def get_cv_evidence(query: str, limit: int = 5) -> list[dict[str, Any]]:
 
     Call this once per requirement (e.g. "Terraform", then "mentoring",
     then "NLP") rather than with one long query - keyword matching works best
-    with 1-3 focused terms. Cite the returned `id`s for every claim you make
+    with 1-3 focused terms, and exact phrases ("code review") rank above
+    the same words found apart. Cite the returned `id`s for every claim you make
     about the user. An empty list means no keyword match: try a synonym or
     broader term (e.g. "IaC" -> "infrastructure") before concluding the user
     lacks that experience.
@@ -87,7 +113,7 @@ def get_cv_evidence(query: str, limit: int = 5) -> list[dict[str, Any]]:
     Args:
         query: A skill, technology or requirement, e.g. "Terraform", "AWS Lambda",
             "mentoring juniors", "OMOP".
-        limit: Maximum number of entries to return (default 5).
+        limit: Maximum number of entries to return (default 10).
     """
     terms = _terms(query)
     scored = [(_score(entry, terms), entry) for entry in CV]
