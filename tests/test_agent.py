@@ -4,10 +4,13 @@ The in-process server (Client(mcp)) uses the fixture data, so ids are cv-001..cv
 """
 import pytest
 from mcp import Client
+from ollama import ChatResponse, Message
 
 from cv_server.server import mcp
 from job_agent.agent import (
+    OLLAMA_NUM_CTX,
     LLMStep,
+    OllamaProvider,
     ToolRequest,
     ToolResult,
     Trace,
@@ -174,3 +177,50 @@ async def test_full_context_mode_puts_cv_in_prompt_and_offers_no_tools():
     assert "cv-005" in provider.system  # the whole fixture CV is in the system prompt
     assert trace.cited_ids == ["cv-003"]
     assert trace.retrieved_ids == []
+
+
+# --- OllamaProvider ------------------------------------------------------------
+
+class FakeOllamaClient:
+    """Stands in for ollama.AsyncClient: records chat() kwargs, returns a canned reply."""
+
+    def __init__(self, prompt_tokens: int = 100):
+        self.prompt_tokens = prompt_tokens
+        self.calls: list[dict] = []
+
+    async def chat(self, **kwargs):
+        self.calls.append(kwargs)
+        return ChatResponse(
+            model=kwargs["model"],
+            message=Message(role="assistant", content="ok"),
+            done=True,
+            done_reason="stop",
+            prompt_eval_count=self.prompt_tokens,
+            eval_count=5,
+        )
+
+
+def ollama_provider(fake: FakeOllamaClient, **kwargs) -> OllamaProvider:
+    provider = OllamaProvider(**kwargs)
+    provider.client = fake
+    provider.start("system", "task", [])
+    return provider
+
+
+async def test_ollama_sets_context_window():
+    # Without num_ctx, Ollama's small default silently drops the system prompt and posting.
+    fake = FakeOllamaClient()
+    await ollama_provider(fake).step()
+    assert fake.calls[0]["options"] == {"num_ctx": OLLAMA_NUM_CTX}
+
+
+async def test_ollama_context_window_is_configurable():
+    fake = FakeOllamaClient()
+    await ollama_provider(fake, num_ctx=8192).step()
+    assert fake.calls[0]["options"]["num_ctx"] == 8192
+
+
+async def test_ollama_warns_when_prompt_fills_context():
+    fake = FakeOllamaClient(prompt_tokens=8192)
+    with pytest.warns(UserWarning, match="context"):
+        await ollama_provider(fake, num_ctx=8192).step()

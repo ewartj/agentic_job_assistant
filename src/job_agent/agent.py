@@ -11,6 +11,7 @@ import asyncio
 import json
 import re
 import time
+import warnings
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -18,12 +19,14 @@ from typing import Any, Protocol
 
 import anthropic
 import ollama
+from dotenv import load_dotenv
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 ROOT = Path(__file__).resolve().parents[2]
 RUNS_DIR = ROOT / "data" / "evals" / "runs"  # gitignored, like the rest of data/
 MAX_TURNS = 8
+OLLAMA_NUM_CTX = 32768  # tokens; enough for the posting plus several rounds of search results
 CV_ID = re.compile(r"\bcv-\d{3}\b")
 # Stop reasons that mean "finished normally" (Claude: end_turn, Ollama: stop).
 # Anything else without tool calls - refusal, max_tokens, length - is recorded as-is.
@@ -180,8 +183,9 @@ class ClaudeProvider:
 class OllamaProvider:
     name = "ollama"
 
-    def __init__(self, model: str = "qwen3.5:9b", host: str | None = None):
+    def __init__(self, model: str = "qwen3.5:9b", host: str | None = None, num_ctx: int = OLLAMA_NUM_CTX):
         self.model = model
+        self.num_ctx = num_ctx
         self.client = ollama.AsyncClient(host=host)  # host=None -> OLLAMA_HOST env var, else localhost
         self.messages: list[Any] = []
 
@@ -190,7 +194,21 @@ class OllamaProvider:
         self.messages = [{"role": "system", "content": system}, {"role": "user", "content": task}]
 
     async def step(self) -> LLMStep:
-        response = await self.client.chat(model=self.model, messages=self.messages, tools=self.tools or None)
+        response = await self.client.chat(
+            model=self.model,
+            messages=self.messages,
+            tools=self.tools or None,
+            # Ollama's default context is only a few thousand tokens, and when the
+            # conversation outgrows it Ollama silently drops the OLDEST messages -
+            # the system prompt and the posting. Set it explicitly.
+            options={"num_ctx": self.num_ctx},
+        )
+        if (response.prompt_eval_count or 0) >= self.num_ctx:
+            warnings.warn(
+                f"Ollama prompt filled the {self.num_ctx}-token context; early messages were probably "
+                "dropped. Raise --num-ctx.",
+                stacklevel=2,
+            )
         self.messages.append(response.message)
         # Ollama has no call ids, so make our own; results are matched by tool_name instead.
         calls = [
@@ -323,15 +341,15 @@ Assess my fit for this role using my CV evidence.
 </posting>"""
 
 
-def make_provider(name: str, model: str | None) -> Provider:
+def make_provider(name: str, model: str | None, num_ctx: int = OLLAMA_NUM_CTX) -> Provider:
     if name == "claude":
         return ClaudeProvider(model) if model else ClaudeProvider()
-    return OllamaProvider(model) if model else OllamaProvider()
+    return OllamaProvider(model, num_ctx=num_ctx) if model else OllamaProvider(num_ctx=num_ctx)
 
 
 async def amain(args: argparse.Namespace) -> None:
     task = TASK_TEMPLATE.format(posting=args.posting.read_text(encoding="utf-8"))
-    provider = make_provider(args.provider, args.model)
+    provider = make_provider(args.provider, args.model, args.num_ctx)
     server = StdioServerParameters(command="uv", args=["run", "cv-server"], cwd=str(ROOT))
 
     async with stdio_client(server) as (read, write), ClientSession(read, write) as session:
@@ -358,10 +376,14 @@ async def amain(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
+    # Local secrets/config from .env (gitignored; see .env.example). Variables already
+    # set in the environment win, so CI and deployments don't need the file.
+    load_dotenv(ROOT / ".env")
     parser = argparse.ArgumentParser(description="Assess fit for a job posting using cv-server tools.")
     parser.add_argument("posting", type=Path, help="text/markdown file containing the job posting")
     parser.add_argument("--provider", choices=["claude", "ollama"], default="claude")
     parser.add_argument("--model", help="override the provider's default model")
     parser.add_argument("--mode", choices=["tools", "full-context"], default="tools")
     parser.add_argument("--max-turns", type=int, default=MAX_TURNS)
+    parser.add_argument("--num-ctx", type=int, default=OLLAMA_NUM_CTX, help="Ollama context window in tokens")
     asyncio.run(amain(parser.parse_args()))
