@@ -43,7 +43,7 @@ async def test_full_cv_resource():
         resources = [str(r.uri) for r in (await client.list_resources()).resources]
         content = await client.read_resource("cv://full")
 
-    assert resources == ["cv://full"]
+    assert resources == ["cv://full", "postings://index"]
     assert [e["id"] for e in json.loads(content.contents[0].text)] == [
         "cv-001", "cv-002", "cv-003", "cv-004", "cv-005", "cv-006", "cv-007", "cv-008",
     ]
@@ -54,5 +54,34 @@ async def test_cv_entry_resource_template():
         templates = [t.uri_template for t in (await client.list_resource_templates()).resource_templates]
         content = await client.read_resource("cv://entry/cv-003")
 
-    assert templates == ["cv://entry/{entry_id}"]
+    assert templates == ["cv://entry/{entry_id}", "postings://posting/{name}"]
     assert json.loads(content.contents[0].text)["id"] == "cv-003"
+
+
+# --- postings:// resources ---------------------------------------------------
+
+async def test_postings_index_lists_saved_postings_with_headers():
+    async with Client(mcp) as client:
+        content = await client.read_resource("postings://index")
+
+    postings = {p["name"]: p for p in json.loads(content.contents[0].text)}
+    assert set(postings) == {"acme_ds", "plain"}
+    assert postings["acme_ds"]["company"] == "Acme Health"
+    assert postings["acme_ds"]["saved"] == "2026-10-19"
+    assert postings["plain"]["company"] is None
+
+
+async def test_posting_resource_returns_text_without_header():
+    async with Client(mcp) as client:
+        content = await client.read_resource("postings://posting/acme_ds")
+
+    text = content.contents[0].text
+    assert text.startswith("# Senior Data Scientist")
+    assert "company:" not in text
+
+
+@pytest.mark.parametrize("name", ["missing", "..%2F..%2F.env"])
+async def test_unknown_or_unsafe_posting_is_an_error(name):
+    async with Client(mcp) as client:
+        with pytest.raises(Exception):  # noqa: B017 - the SDK wraps the server's error
+            await client.read_resource(f"postings://posting/{name}")

@@ -5,11 +5,15 @@ This will be rebuilt as a LangGraph graph - keep this version to compare against
 
     uv run job-agent data/evals/postings/bbc_mle.md --provider claude
     uv run job-agent data/evals/postings/bbc_mle.md --provider ollama --mode full-context
+    uv run job-agent --clipboard acme_ds --company "Acme" --role "Data Scientist"   # paste, save, run
 """
 import argparse
 import asyncio
+import base64
 import json
 import re
+import subprocess
+import sys
 import time
 import warnings
 from dataclasses import asdict, dataclass, field
@@ -23,8 +27,11 @@ from dotenv import load_dotenv
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
+from cv_server.postings import save_posting, split_front_matter
+
 ROOT = Path(__file__).resolve().parents[2]
 RUNS_DIR = ROOT / "data" / "evals" / "runs"  # gitignored, like the rest of data/
+POSTINGS_DIR = ROOT / "data" / "evals" / "postings"
 MAX_TURNS = 8
 OLLAMA_NUM_CTX = 32768  # tokens; enough for the posting plus several rounds of search results
 CV_ID = re.compile(r"\bcv-\d{3}\b")
@@ -352,8 +359,24 @@ def make_provider(name: str, model: str | None, num_ctx: int = OLLAMA_NUM_CTX) -
     return OllamaProvider(model, num_ctx=num_ctx) if model else OllamaProvider(num_ctx=num_ctx)
 
 
+def read_clipboard() -> str:
+    if sys.platform == "win32":
+        # Base64 of the UTF-8 bytes: PowerShell's console encoding otherwise garbles "£" and "–".
+        script = "[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([string](Get-Clipboard -Raw)))"
+        out = subprocess.run(["powershell", "-NoProfile", "-Command", script],
+                             capture_output=True, check=True, text=True).stdout
+        return base64.b64decode(out.strip()).decode("utf-8")
+    if sys.platform == "darwin":
+        cmd = ["pbpaste"]
+    else:
+        cmd = ["xclip", "-selection", "clipboard", "-o"]
+    return subprocess.run(cmd, capture_output=True, check=True, encoding="utf-8").stdout
+
+
 async def amain(args: argparse.Namespace) -> None:
-    task = TASK_TEMPLATE.format(posting=args.posting.read_text(encoding="utf-8"))
+    # The header (company, url, ...) is for you; the model only gets the posting text.
+    _, posting = split_front_matter(args.posting.read_text(encoding="utf-8"))
+    task = TASK_TEMPLATE.format(posting=posting)
     provider = make_provider(args.provider, args.model, args.num_ctx)
     server = StdioServerParameters(command="uv", args=["run", "cv-server"], cwd=str(ROOT))
 
@@ -385,10 +408,25 @@ def main() -> None:
     # set in the environment win, so CI and deployments don't need the file.
     load_dotenv(ROOT / ".env")
     parser = argparse.ArgumentParser(description="Assess fit for a job posting using cv-server tools.")
-    parser.add_argument("posting", type=Path, help="text/markdown file containing the job posting")
+    parser.add_argument("posting", type=Path, nargs="?", help="text/markdown file containing the job posting")
+    parser.add_argument("--clipboard", metavar="NAME",
+                        help="save the clipboard as data/evals/postings/NAME.md, then assess it")
+    parser.add_argument("--company", help="with --clipboard: stored in the posting's header")
+    parser.add_argument("--role", help="with --clipboard: stored in the posting's header")
+    parser.add_argument("--url", help="with --clipboard: stored in the posting's header")
     parser.add_argument("--provider", choices=["claude", "ollama"], default="claude")
     parser.add_argument("--model", help="override the provider's default model")
     parser.add_argument("--mode", choices=["tools", "full-context"], default="tools")
     parser.add_argument("--max-turns", type=int, default=MAX_TURNS)
     parser.add_argument("--num-ctx", type=int, default=OLLAMA_NUM_CTX, help="Ollama context window in tokens")
-    asyncio.run(amain(parser.parse_args()))
+    args = parser.parse_args()
+    if (args.posting is None) == (args.clipboard is None):
+        parser.error("give either a posting file or --clipboard NAME")
+    if args.clipboard:
+        try:
+            args.posting = save_posting(POSTINGS_DIR, args.clipboard, read_clipboard(),
+                                        company=args.company, role=args.role, url=args.url)
+        except (ValueError, FileExistsError) as e:
+            parser.error(str(e))
+        print(f"saved posting to {args.posting}\n")
+    asyncio.run(amain(args))

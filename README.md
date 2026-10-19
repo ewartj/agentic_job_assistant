@@ -34,7 +34,15 @@ It's built with the `mcp` 2.x Python SDK. In 2.x, `FastMCP` was renamed `MCPServ
 | `get_past_letters(company)` | Returns cover letters previously written to a company (a case-insensitive substring match) |
 | `list_past_applications()` | Lists every application on file, without the letter text |
 
-**Resources** (the client application decides what to read into context): `cv://full` returns the whole CV, and `cv://entry/{entry_id}` returns one entry.
+**Resources** (the client application decides what to read into context):
+
+| Resource | Returns |
+|---|---|
+| `cv://full`, `cv://entry/{entry_id}` | The whole CV, or one entry |
+| `postings://index` | Every saved job posting: name, company, role, url and date saved |
+| `postings://posting/{name}` | One posting's text, without its header |
+
+Postings are resources rather than tools because the user chooses the posting, not the model. They're read from disk on every request, so a newly saved posting appears without restarting the server. Posting names are validated before they become file paths, so a request like `postings://posting/../../.env` is rejected.
 
 **Search** is keyword-based. It weights each match by how rare the term is across the CV (IDF), so "parquet" counts for more than "code". On top of that:
 - Tag matches score double compared with matches in the text.
@@ -133,6 +141,17 @@ cp .env.example .env    # add ANTHROPIC_API_KEY, and OLLAMA_HOST if Ollama runs 
   uv run python scripts/build_letters.py
   ```
 
+- **`data/evals/postings/<name>.md`**: job postings, pasted in by hand (or saved with `--clipboard`). An optional header records where each one came from. The agent sends only the text below the header to the model.
+  ```markdown
+  ---
+  company: Acme Health
+  role: Senior Data Scientist
+  url: https://example.com/jobs/123
+  saved: '2026-10-19'
+  ---
+  (the posting text, pasted as-is)
+  ```
+
 To see the expected formats, look at [tests/fixtures/](tests/fixtures/).
 
 ## Usage
@@ -142,7 +161,10 @@ To see the expected formats, look at [tests/fixtures/](tests/fixtures/).
 uv run cv-server
 npx @modelcontextprotocol/inspector uv run cv-server
 
-# Run the agent on a posting (the trace is appended to data/evals/runs/<posting>.jsonl)
+# Copy a job posting from the browser, then save it and assess it in one step
+uv run job-agent --clipboard acme_ds --company "Acme" --role "Data Scientist" --url "https://..."
+
+# Run the agent on a saved posting (the trace is appended to data/evals/runs/<posting>.jsonl)
 uv run job-agent data/evals/postings/example.md
 uv run job-agent data/evals/postings/example.md --provider ollama --model qwen3.5:9b
 uv run job-agent data/evals/postings/example.md --mode full-context
@@ -188,6 +210,7 @@ uv run ruff check .
 
 ```
 src/cv_server/server.py    MCP server: tools, resources, search
+src/cv_server/postings.py  saved job postings: header parsing, safe names, saving
 src/job_agent/agent.py     agent loop, providers, CLI
 src/job_agent/scoring.py   eval scoring (job-score)
 scripts/                   build_letters.py, show_cited.py, try_client.py (stdio smoke test)
