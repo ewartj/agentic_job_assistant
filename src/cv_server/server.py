@@ -15,6 +15,8 @@ from typing import Any
 
 from mcp.server.mcpserver import MCPServer
 
+from cv_server.postings import list_postings, posting_path, split_front_matter
+
 # data/ is gitignored (personal data); tests point this at tests/fixtures instead.
 DATA_DIR = Path(os.environ.get("CV_SERVER_DATA_DIR", Path(__file__).resolve().parents[2] / "data"))
 
@@ -165,6 +167,34 @@ def cv_entry(entry_id: str) -> str:
         if entry["id"] == entry_id:
             return json.dumps(_public(entry), indent=2, ensure_ascii=False)
     raise ValueError(f"No CV entry with id {entry_id!r}")
+
+
+# Postings are read from disk on every request (unlike the CV, loaded once), so a
+# newly pasted posting shows up without restarting the server.
+POSTINGS_DIR = DATA_DIR / "evals" / "postings"
+
+
+@mcp.resource(
+    "postings://index",
+    name="Saved job postings",
+    description="Every saved job posting: name, company, role, url and the date it was saved.",
+    mime_type="application/json",
+)
+def postings_index() -> str:
+    return json.dumps(list_postings(POSTINGS_DIR), indent=2, ensure_ascii=False)
+
+
+@mcp.resource(
+    "postings://posting/{name}",
+    name="Job posting",
+    description="One saved job posting's text, without its header, e.g. postings://posting/bbc_mle.",
+    mime_type="text/markdown",
+)
+def posting(name: str) -> str:
+    path = posting_path(POSTINGS_DIR, name)
+    if not path.exists():
+        raise ValueError(f"No saved posting named {name!r}")
+    return split_front_matter(path.read_text(encoding="utf-8"))[1]
 
 
 def main() -> None:
