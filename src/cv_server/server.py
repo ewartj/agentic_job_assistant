@@ -14,6 +14,7 @@ from statistics import mean
 from typing import Any
 
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ResourceNotFoundError
 
 from cv_server.postings import list_postings, posting_path, split_front_matter
 
@@ -145,6 +146,10 @@ def get_past_letters(company: str) -> list[dict[str, Any]]:
 # --- Resources (application/user-controlled) ---------------------------------
 # The model can't call these. The client lists them (resources/list) and chooses
 # what to read (resources/read) and put into context.
+#
+# Errors: only ResourceError messages reach the client; any other exception is a crash,
+# reported as a generic internal error (-32603). ResourceNotFoundError, a ResourceError,
+# also sends -32602 (invalid params), meaning "bad request", not "server broke".
 
 @mcp.resource(
     "cv://full",
@@ -166,7 +171,7 @@ def cv_entry(entry_id: str) -> str:
     for entry in CV:
         if entry["id"] == entry_id:
             return json.dumps(_public(entry), indent=2, ensure_ascii=False)
-    raise ValueError(f"No CV entry with id {entry_id!r}")
+    raise ResourceNotFoundError(f"No CV entry with id {entry_id!r}")
 
 
 # Postings are read from disk on every request (unlike the CV, loaded once), so a
@@ -191,9 +196,12 @@ def postings_index() -> str:
     mime_type="text/markdown",
 )
 def posting(name: str) -> str:
-    path = posting_path(POSTINGS_DIR, name)
+    try:
+        path = posting_path(POSTINGS_DIR, name)
+    except ValueError as e:  # an unsafe or malformed name can't name any posting
+        raise ResourceNotFoundError(str(e)) from e
     if not path.exists():
-        raise ValueError(f"No saved posting named {name!r}")
+        raise ResourceNotFoundError(f"No saved posting named {name!r} - read postings://index for the names")
     return split_front_matter(path.read_text(encoding="utf-8"))[1]
 
 
