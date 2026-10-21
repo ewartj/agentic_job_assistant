@@ -2,9 +2,10 @@
 
 [![tests](https://github.com/ewartj/agentic_job_assistant/actions/workflows/tests.yml/badge.svg)](https://github.com/ewartj/agentic_job_assistant/actions/workflows/tests.yml)
 
-A learning project for building MCP servers and AI agents. It has three parts:
+A learning project for building MCP servers and AI agents. It has these parts:
 
-- **An MCP server** (`cv-server`) that exposes my CV and past job-application letters as tools and resources.
+- **An MCP server** (`cv-server`) that exposes my CV, past job-application letters and saved job postings as tools and resources.
+- **A second MCP server** (`tracker-server`) that records applications and drafts in SQLite. Its tools write data, not just read it.
 - **A hand-written agent loop** (`job-agent`) that reads a job posting, searches the CV through the MCP server, and writes a fit assessment that cites the evidence behind every claim.
 - **An eval harness** (`job-score`) that scores the agent's runs against an answer key I wrote by hand.
 
@@ -49,6 +50,23 @@ Postings are resources rather than tools because the user chooses the posting, n
 - Adjacent query words found together as a phrase, such as "code review", score a bonus.
 - Short terms like "R" or "CI" must match a whole word; longer terms match the start of a word, so "test" finds "testing".
 - Tags help the search but are never sent to the model.
+
+## The tracker server: `src/tracker_server/`
+
+It keeps job applications, their status history and versioned drafts in SQLite (`data/tracker.db`, gitignored). It's split into `store.py`, plain SQLite functions holding the rules, and `server.py`, a thin MCP layer on top.
+
+| Tool | Writes? | What it does |
+|---|---|---|
+| `log_application(company, role, ...)` | Yes, idempotent | Records an application. Logging the same company and role again returns the existing record with `created: false`. |
+| `update_status(application_id, status, note)` | Yes, idempotent | Changes the status (interested → applied → interviewing → offer / rejected / withdrawn). Every change is kept in the history. |
+| `save_draft(application_id, kind, text)` | Yes | Saves a cover letter, motivation or application answers. Saving again adds a new version; nothing is overwritten. |
+| `list_applications(status)`, `get_application(id)`, `get_draft(id, kind, version)` | No | Read applications, history and drafts |
+
+What's different about a server whose tools write:
+- **Tool annotations.** Each tool declares `read_only_hint`, `destructive_hint`, `idempotent_hint` and `open_world_hint`, so a client can, for example, ask the user before running a write. No tool here deletes or overwrites anything.
+- **Idempotency.** A model may retry a call. Logging an application twice or setting the same status twice changes nothing. A database `UNIQUE` constraint (ignoring case) backs up the duplicate check.
+- **Enums in the schema.** Statuses and draft kinds are `Literal` types, so the tool schema lists the allowed values and the model sees them before calling.
+- **Errors the model can act on.** In mcp 2.x, only a `ToolError`'s message reaches the model; any other exception is reported as a generic crash, so internals don't leak. Bad input becomes a `ToolError` with a message saying what to do, such as "No application with id 99 - call list_applications to see the ids".
 
 ## The agent: `src/job_agent/agent.py`
 
@@ -157,9 +175,10 @@ To see the expected formats, look at [tests/fixtures/](tests/fixtures/).
 ## Usage
 
 ```bash
-# Run the MCP server on its own, e.g. for Claude Desktop or the MCP Inspector
+# Run an MCP server on its own, e.g. for Claude Desktop or the MCP Inspector
 uv run cv-server
 npx @modelcontextprotocol/inspector uv run cv-server
+npx @modelcontextprotocol/inspector uv run tracker-server
 
 # Copy a job posting from the browser, then save it and assess it in one step
 uv run job-agent --clipboard acme_ds --company "Acme" --role "Data Scientist" --url "https://..."
@@ -180,7 +199,10 @@ uv run python scripts/show_cited.py example --last 2 --text
 To use the server from Claude Desktop, add it to `claude_desktop_config.json`:
 
 ```json
-{"mcpServers": {"cv-server": {"command": "uv", "args": ["--directory", "C:\\path\\to\\agentic_job_assistant", "run", "cv-server"]}}}
+{"mcpServers": {
+  "cv-server":      {"command": "uv", "args": ["--directory", "C:\\path\\to\\agentic_job_assistant", "run", "cv-server"]},
+  "tracker-server": {"command": "uv", "args": ["--directory", "C:\\path\\to\\agentic_job_assistant", "run", "tracker-server"]}
+}}
 ```
 
 If Claude Desktop was installed from the Microsoft Store, the config is at `%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Claude\` rather than `%APPDATA%\Claude\`.
@@ -195,6 +217,7 @@ uv run ruff check .
 - **Tests** run against fixture data in `tests/fixtures/`. `CV_SERVER_DATA_DIR` points the server at the fixtures, so they never touch personal data. They cover:
   - the search rules, for both scoring and ranking;
   - the tools and the MCP protocol, using an in-process client;
+  - the tracker's rules against a temporary SQLite database (`TRACKER_DB`);
   - the agent loop, using a scripted fake model;
   - the eval scoring.
 - **GitHub Actions** runs pytest and ruff on every push and pull request.
@@ -211,9 +234,10 @@ uv run ruff check .
 ```
 src/cv_server/server.py    MCP server: tools, resources, search
 src/cv_server/postings.py  saved job postings: header parsing, safe names, saving
+src/tracker_server/        MCP server for applications and drafts: store.py (SQLite rules), server.py (tools)
 src/job_agent/agent.py     agent loop, providers, CLI
 src/job_agent/scoring.py   eval scoring (job-score)
-scripts/                   build_letters.py, show_cited.py, try_client.py (stdio smoke test)
+scripts/                   build_letters.py, import_applications.py (letters -> tracker), show_cited.py, try_client.py
 tests/                     pytest suite and fixtures
 ```
 

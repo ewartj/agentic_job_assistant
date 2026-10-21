@@ -7,7 +7,8 @@
 #   company   (required)
 #   category  (required) cover_letter | motivation | application_answers
 #   status    (required) final | draft
-#   role, date, outcome, notes  (optional)
+#   role, date, notes  (optional)
+#   outcome   (optional) interview | offer | rejected | withdrawn, or a list in order - used by import_applications.py
 #   reflow    (optional) true to re-join lines hard-wrapped mid-sentence
 #   keep_case (optional, with reflow) words to leave capitalised when re-joining, e.g. proper nouns
 # Quote dates ('2026-04-11', '2022') or YAML turns them into dates/ints.
@@ -26,3 +27,11 @@ letters:
   category: motivation
   status: draft
   notes: Short "why us" answer from the application form.
+
+# Optional: past applications with no letter worth keeping. These go into the
+# tracker only (scripts/import_applications.py), not letters.json.
+#   outcome: one stage or a list in order - interview, offer, rejected, withdrawn
+# Quote any value containing a comma, or YAML splits it into extra keys.
+applications:
+- {company: Beta Analytics, role: 'Data Scientist, Platform', date: '2022', outcome: [interview, rejected]}
+- {company: Gamma Labs, date: '2022', outcome: rejected}
