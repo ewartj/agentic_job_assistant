@@ -51,14 +51,18 @@ def list_postings(directory: Path) -> list[dict[str, Any]]:
     return postings
 
 
-def save_posting(directory: Path, name: str, text: str, **meta: str | None) -> Path:
-    """Write a new posting with a header. Never overwrites an existing one."""
+def save_posting(directory: Path, name: str, text: str, replace: bool = False, **meta: str | None) -> Path:
+    """Write a posting with a header. An existing posting is only overwritten with
+    replace=True; its header fields are kept unless new values are given."""
     path = posting_path(directory, name)
-    if path.exists():
-        raise FileExistsError(f"{path} already exists - pick another name")
     if not text.strip():
         raise ValueError("posting text is empty")
-    header = {k: v for k, v in meta.items() if v} | {"saved": date.today().isoformat()}
+    old: dict[str, Any] = {}
+    if path.exists():
+        if not replace:
+            raise FileExistsError(f"{path} already exists - pick another name, or use --replace")
+        old, _ = split_front_matter(path.read_text(encoding="utf-8"))
+    header = old | {k: v for k, v in meta.items() if v} | {"saved": date.today().isoformat()}
     path.parent.mkdir(parents=True, exist_ok=True)
     head = yaml.safe_dump(header, sort_keys=False, allow_unicode=True)
     path.write_text(f"---\n{head}---\n{text.strip()}\n", encoding="utf-8")

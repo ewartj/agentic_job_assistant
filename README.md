@@ -182,6 +182,7 @@ npx @modelcontextprotocol/inspector uv run tracker-server
 
 # Copy a job posting from the browser, then save it and assess it in one step
 uv run job-agent --clipboard acme_ds --company "Acme" --role "Data Scientist" --url "https://..."
+uv run job-agent --clipboard acme_ds --replace   # saved the wrong text? copy the advert again and replace it
 
 # Run the agent on a saved posting (the trace is appended to data/evals/runs/<posting>.jsonl)
 uv run job-agent data/evals/postings/example.md
