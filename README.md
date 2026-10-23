@@ -110,15 +110,20 @@ The answer key is checked when it loads: unknown ids, or an id listed as both `e
 
 ### Findings so far
 
-These come from one real senior ML-engineering posting, with 2–3 runs per setup, so treat them as indicative. All rows are scored against the same answer key.
+These come from three real postings, with 3 runs per setup, so treat them as indicative. Each posting has its own hand-written answer key.
 
-**Current baseline** (current search and prompt):
+**Current baseline** (current search and prompt, tools mode):
 
-| Setup | retrieved | cited | precision | made-up |
-|---|---|---|---|---|
-| Claude Haiku, tools | 96% | 88% | 92% | 0 |
-| Claude Haiku, full context (no search) | – | 88% | 91% | 0 |
-| qwen3.5:9b (local, via Ollama), tools | 87% | 65% | 90% | 0 |
+| Posting | Claude Haiku: retrieved / cited / precision | qwen3.5:9b (local): retrieved / cited / precision |
+|---|---|---|
+| Senior ML engineer (large media organisation) | 96% / 88% / 92% | 87% / 65% / 90% |
+| Data engineer (health-tech startup) | 92% / 92% / 96% | 92% / 70% / 95% |
+| Back-end software engineer (health-tech) | 81% / 74% / 94% | 80% / 51% / 87% |
+| **Average** | **90% / 85% / 94%** | **86% / 62% / 91%** |
+
+Neither model cited an id it hadn't retrieved in any of these runs (made-up: 0).
+
+With the whole CV in the prompt and no search (full-context mode), Claude cites 88% on the ML engineer posting, the same as with tools.
 
 **How the Claude tools setup got there:**
 
@@ -133,8 +138,10 @@ What these show:
 - **The search no longer loses anything.** With tools, Claude now cites as much must-cite evidence as when it's given the whole CV (88% both ways). It started 20 points behind.
 - **Ties hide evidence.** Nine CV entries share the tag "code review", so with `limit=5` the later ones were never returned, however good the ranking. Raising the limit fixed that; improving the ranking alone couldn't.
 - **Some evidence has to be asked for.** Entries written as stories (impact, process, leadership) rarely match skill-style queries. Asking the model to also search for impact and outcomes was the single biggest gain.
-- **The small local model's weakness is judgement, not search.** The search fixes helped qwen too: it went from 52% to 65% cited. It still cites much less than Claude from similar retrieved evidence, and it sometimes attaches a real id to the wrong claim. A recall/precision score can't catch that, because the id is valid for the requirement.
+- **The small local model's weakness is judgement, not search - on every posting.** qwen retrieves about as much must-cite evidence as Claude (86% vs 90% on average) but cites over 20 points less of it (62% vs 85%). The search fixes helped it too (52% to 65% cited on the first posting). It also sometimes attaches a real id to the wrong claim, which a recall/precision score can't catch because the id is valid for the requirement, and it once looked up past letters for the wrong company because the names overlapped ("Foundation Health" vs "Our Future Health").
 - **Answer keys need judgement too.** A few entries were missed even with the full CV. I moved them from "must cite" to "acceptable" rather than tuning the agent to match my opinion of them.
+- **The fixes mostly generalise, except for evidence written as a story.** The data engineer posting scores as well as the first one. The back-end posting is lower because it asks for behaviour (ownership, judgement, learning quickly) rather than tools. Two entries it needs, a team strategy and a self-taught build, were never retrieved in any run. That's the same blind spot the impact prompt fixed for outcomes, and it's the test case for embedding search.
+- **New answer keys need a review after the first runs.** The first runs on the new postings showed precision of 84–86%. Most of the gap was the keys, not the agent: ids the agent cited in every run that were genuinely good evidence, and "must cite" picks the model rightly treated as weak, such as role summaries. Moving those to "acceptable" took precision to 94–96%. Changes are recorded in comments in each key.
 - **The agent found real problems in the CV,** such as the same skill described as "in progress" in one place and "used in production" in another.
 
 ## Setup
