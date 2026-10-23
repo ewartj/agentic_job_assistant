@@ -6,6 +6,7 @@ This will be rebuilt as a LangGraph graph - keep this version to compare against
     uv run job-agent data/evals/postings/bbc_mle.md --provider claude
     uv run job-agent data/evals/postings/bbc_mle.md --provider ollama --mode full-context
     uv run job-agent --clipboard acme_ds --company "Acme" --role "Data Scientist"   # paste, save, run
+    uv run job-agent --clipboard acme_ds --replace     # re-paste a posting that was saved wrongly
 """
 import argparse
 import asyncio
@@ -414,6 +415,8 @@ def main() -> None:
     parser.add_argument("--company", help="with --clipboard: stored in the posting's header")
     parser.add_argument("--role", help="with --clipboard: stored in the posting's header")
     parser.add_argument("--url", help="with --clipboard: stored in the posting's header")
+    parser.add_argument("--replace", action="store_true",
+                        help="with --clipboard: overwrite an existing posting (header kept unless given new values)")
     parser.add_argument("--provider", choices=["claude", "ollama"], default="claude")
     parser.add_argument("--model", help="override the provider's default model")
     parser.add_argument("--mode", choices=["tools", "full-context"], default="tools")
@@ -422,11 +425,19 @@ def main() -> None:
     args = parser.parse_args()
     if (args.posting is None) == (args.clipboard is None):
         parser.error("give either a posting file or --clipboard NAME")
+    if args.replace and not args.clipboard:
+        parser.error("--replace only works with --clipboard NAME")
     if args.clipboard:
         try:
-            args.posting = save_posting(POSTINGS_DIR, args.clipboard, read_clipboard(),
+            args.posting = save_posting(POSTINGS_DIR, args.clipboard, read_clipboard(), replace=args.replace,
                                         company=args.company, role=args.role, url=args.url)
         except (ValueError, FileExistsError) as e:
             parser.error(str(e))
-        print(f"saved posting to {args.posting}\n")
+        # Show the start of what was saved, so a wrong clipboard (e.g. a command) is obvious.
+        _, body = split_front_matter(args.posting.read_text(encoding="utf-8"))
+        preview = "\n".join(f"  | {line}" for line in body.splitlines()[:3])
+        print(f"saved posting to {args.posting}:\n{preview}\n")
+        runs = RUNS_DIR / f"{args.posting.stem}.jsonl"
+        if args.replace and runs.exists():
+            print(f"note: earlier runs in {runs} were made on the old text - delete it to start the scores afresh\n")
     asyncio.run(amain(args))

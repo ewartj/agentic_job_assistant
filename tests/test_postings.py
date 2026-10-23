@@ -56,3 +56,28 @@ def test_list_reads_headers_and_tolerates_missing_ones(tmp_path):
     assert [p["name"] for p in listed] == ["a_job", "b_job"]
     assert listed[0]["company"] is None and listed[1]["company"] == "Beta"
     assert isinstance(listed[1]["saved"], str)  # not a YAML date object
+
+
+def test_replace_overwrites_the_text_and_keeps_the_header(tmp_path):
+    save_posting(tmp_path, "acme", "wrong text", company="Acme", url="https://x")
+    path = save_posting(tmp_path, "acme", "right text", replace=True, role="DS")
+    meta, body = split_front_matter(path.read_text(encoding="utf-8"))
+    assert body == "right text\n"
+    assert (meta["company"], meta["url"], meta["role"]) == ("Acme", "https://x", "DS")  # kept, kept, added
+
+
+def test_replace_can_change_header_fields(tmp_path):
+    save_posting(tmp_path, "acme", "text", company="acme ltd")
+    path = save_posting(tmp_path, "acme", "text", replace=True, company="Acme Health")
+    assert split_front_matter(path.read_text(encoding="utf-8"))[0]["company"] == "Acme Health"
+
+
+def test_replace_of_a_new_name_just_saves(tmp_path):
+    assert save_posting(tmp_path, "fresh", "text", replace=True).exists()
+
+
+def test_replace_still_rejects_empty_text(tmp_path):
+    save_posting(tmp_path, "acme", "good text")
+    with pytest.raises(ValueError, match="empty"):
+        save_posting(tmp_path, "acme", "  ", replace=True)
+    assert "good text" in (tmp_path / "acme.md").read_text(encoding="utf-8")  # untouched
