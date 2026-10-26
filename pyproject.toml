@@ -6,6 +6,10 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "anthropic>=1.11.0",
+    "langchain>=1.4.7",
+    "langchain-anthropic>=1.7.6",
+    "langchain-ollama>=1.1.0",
+    "langgraph>=1.2.16",
     "mcp[cli]>=2.2.0",
     "ollama>=0.6.3",
     "python-dotenv>=1.2.4",
@@ -17,6 +21,7 @@ cv-server = "cv_server:main"
 tracker-server = "tracker_server:main"
 job-agent = "job_agent:main"
 job-score = "job_agent.scoring:main"
+job-graph = "job_agent.graph_agent:main"
 
 [build-system]
 requires = ["uv_build>=0.12.19,<0.14.0"]

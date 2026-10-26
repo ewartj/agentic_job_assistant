@@ -83,6 +83,20 @@ Every run is saved as a JSON trace: the turns, the tool calls, the ids retrieved
   - `full-context`: the whole CV is placed in the prompt and no tools are given. This is the baseline that shows how much the search loses.
 - **Ollama gotcha:** Ollama's default context window is small, and it silently drops the oldest messages when the conversation is too long. That included the job posting itself. The agent sets `num_ctx` to 32k tokens and warns if a prompt fills the window.
 
+## The LangGraph agent: `src/job_agent/graph_agent.py`
+
+The same agent rebuilt on LangChain and LangGraph, with the same prompt, MCP servers and trace format, so `job-score` scores both and the comparison is like for like. Its runs are recorded as `langgraph-claude` / `langgraph-ollama`.
+
+| Hand-written (`agent.py`) | LangChain / LangGraph (`graph_agent.py`) |
+|---|---|
+| `ClaudeProvider`, `OllamaProvider` | `ChatAnthropic`, `ChatOllama`: one interface for both |
+| `to_claude_tools`, `to_ollama_tools` | `bind_tools()`, called inside `create_agent` |
+| The `for` loop in `run_agent` | `create_agent()`: a two-node graph, `model` ⇄ `tools` |
+| The turn cap | LangGraph's `recursion_limit` (two graph steps per turn) |
+
+- **MCP tools come through a small adapter of our own.** The usual package, `langchain-mcp-adapters`, requires `mcp<2.0`, and this project uses mcp 2.x. `mcp_tools()` wraps each MCP tool as a LangChain `StructuredTool` with the tool's own JSON schema. The CV ids it returns ride along as the `ToolMessage`'s `artifact`, so the trace records what was retrieved without the model seeing anything extra.
+- **`--with-tracker`** also offers `tracker-server`'s tools, filtered to those annotated `read_only_hint`, so an assessment can look up past applications but never write to the tracker.
+
 ## Evals: `src/job_agent/scoring.py`
 
 For each posting, I write an answer key (`data/evals/<posting>.yaml`). For each requirement it lists the CV entries that **must** be cited (`expected`) and those that are **fine** to cite (`acceptable`):
@@ -196,6 +210,10 @@ uv run job-agent data/evals/postings/example.md
 uv run job-agent data/evals/postings/example.md --provider ollama --model qwen3.5:9b
 uv run job-agent data/evals/postings/example.md --mode full-context
 
+# The same, with the LangGraph agent
+uv run job-graph data/evals/postings/example.md
+uv run job-graph data/evals/postings/example.md --provider ollama --with-tracker
+
 # Score runs against the answer key
 uv run job-score example --runs
 uv run job-score example --since 2026-10-16T16:00   # only runs since a change
@@ -226,7 +244,7 @@ uv run ruff check .
   - the search rules, for both scoring and ranking;
   - the tools and the MCP protocol, using an in-process client;
   - the tracker's rules against a temporary SQLite database (`TRACKER_DB`);
-  - the agent loop, using a scripted fake model;
+  - both agents (hand-written and LangGraph), using scripted fake models;
   - the eval scoring.
 - **GitHub Actions** runs pytest and ruff on every push and pull request.
 - **Secret and personal-data checks** ([.pre-commit-config.yaml](.pre-commit-config.yaml)) run on every commit once installed with `uv run pre-commit install`. In CI, gitleaks also scans the whole git history. The checks block:
@@ -244,6 +262,7 @@ src/cv_server/server.py    MCP server: tools, resources, search
 src/cv_server/postings.py  saved job postings: header parsing, safe names, saving
 src/tracker_server/        MCP server for applications and drafts: store.py (SQLite rules), server.py (tools)
 src/job_agent/agent.py     agent loop, providers, CLI
+src/job_agent/graph_agent.py  the same agent on LangChain / LangGraph (job-graph)
 src/job_agent/scoring.py   eval scoring (job-score)
 scripts/                   build_letters.py, import_applications.py (letters -> tracker), show_cited.py, try_client.py
 tests/                     pytest suite and fixtures
