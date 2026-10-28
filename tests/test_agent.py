@@ -169,6 +169,13 @@ async def test_abnormal_stop_reason_is_recorded():
     assert trace.stop == "refusal"
 
 
+async def test_a_normal_stop_with_no_text_is_an_empty_answer():
+    provider = ScriptedProvider([answers("  \n")])  # e.g. qwen spent the turn thinking
+    trace = await run_scripted(provider)
+
+    assert trace.stop == "empty_answer"
+
+
 async def test_full_context_mode_puts_cv_in_prompt_and_offers_no_tools():
     provider = ScriptedProvider([answers("Fits [cv-003].")])
     trace = await run_scripted(provider, mode="full-context")

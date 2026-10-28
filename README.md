@@ -97,6 +97,47 @@ The same agent rebuilt on LangChain and LangGraph, with the same prompt, MCP ser
 - **MCP tools come through a small adapter of our own.** The usual package, `langchain-mcp-adapters`, requires `mcp<2.0`, and this project uses mcp 2.x. `mcp_tools()` wraps each MCP tool as a LangChain `StructuredTool` with the tool's own JSON schema. The CV ids it returns ride along as the `ToolMessage`'s `artifact`, so the trace records what was retrieved without the model seeing anything extra.
 - **`--with-tracker`** also offers `tracker-server`'s tools, filtered to those annotated `read_only_hint`, so an assessment can look up past applications but never write to the tracker.
 
+### The same graph, built by hand: `src/job_agent/state_graph.py`
+
+`--graph explicit` replaces `create_agent` with a `StateGraph` written out in full. It uses the same node names, the same request to the model and the same trace, so the tests run against both graphs and must agree. Its runs are recorded as `stategraph-claude` / `stategraph-ollama`.
+
+```mermaid
+graph TD;
+  __start__ --> model;
+  model -.->|tool calls| tools;
+  model -.->|answered| __end__;
+  tools -.->|under the turn cap| model;
+  tools -.->|turn cap reached| __end__;
+```
+
+| What `create_agent` hid | Where it is in `state_graph.py` |
+|---|---|
+| The state: a message list with an append reducer | `AgentState`, plus a `turns` counter and the `retrieved_ids` gathered from tool results |
+| Calling the model with the tools bound | `call_model`, which adds the system prompt to every call |
+| Running the tool calls | `run_tools`, which runs a turn's calls concurrently |
+| Deciding what runs next | `after_model` and `after_tools`, the conditional edges |
+| The turn cap | a counter in the state, checked by `after_tools`, rather than an exception |
+
+- **Writing it out found an off-by-one in the prebuilt version.** A `recursion_limit` of `2 * max_turns + 1` allowed one more model call than `agent.py`'s loop. It is now `2 * max_turns`, and a test checks the turn count for both graphs.
+- `uv run job-graph <posting> --graph explicit --draw` prints the graph as Mermaid.
+
+### Results: the framework changes the code, not the scores
+
+Cited (recall of must-cite ids), averaged over all runs of each setup, with the number of runs in brackets:
+
+| Posting | Hand-written | Prebuilt graph | Hand-built graph | qwen, hand-written | qwen, hand-built graph |
+|---|---|---|---|---|---|
+| Senior ML engineer | 82% (10) | 83% (5) | 80% (1) | 59% (6) | 68% (1) |
+| Data engineer | 89% (5) | 85% (4) | 85% (1) | 70% (3) | 60% (1)* |
+| Back-end software engineer | 76% (5) | 64% (5) | 65% (1) | 51% (3) | 43% (1) |
+
+\* Excludes one run with an empty answer (see below).
+
+- **All three agents send the model the same request,** and a test checks that the two graphs do. Run-to-run noise is about ±7–8 points, so the differences above are mostly noise.
+- **The back-end posting is the exception:** both graph versions trail the hand-written loop by about 11 points. Given the identical requests, the likelier cause is the queries the model happened to choose. Those runs used short one- or two-word queries, and the missed entries are the story-style ones that keyword search rarely finds. That's a search problem rather than a framework one.
+- **Every hand-built run finished in 2–4 turns.** The first turn sent all of its searches at once, up to 26, and `run_tools` ran them concurrently.
+- **qwen once returned an empty answer.** It spent its final turn thinking (877 output tokens) and produced no text, but Ollama reported a normal stop, so the trace said `done`. Both agents now record that as `stop=empty_answer`, and `job-score` flags it next to the run, including for older traces. A rerun scored normally.
+
 ## Evals: `src/job_agent/scoring.py`
 
 For each posting, I write an answer key (`data/evals/<posting>.yaml`). For each requirement it lists the CV entries that **must** be cited (`expected`) and those that are **fine** to cite (`acceptable`):
@@ -213,6 +254,7 @@ uv run job-agent data/evals/postings/example.md --mode full-context
 # The same, with the LangGraph agent
 uv run job-graph data/evals/postings/example.md
 uv run job-graph data/evals/postings/example.md --provider ollama --with-tracker
+uv run job-graph data/evals/postings/example.md --graph explicit   # the hand-built StateGraph
 
 # Score runs against the answer key
 uv run job-score example --runs
@@ -244,7 +286,7 @@ uv run ruff check .
   - the search rules, for both scoring and ranking;
   - the tools and the MCP protocol, using an in-process client;
   - the tracker's rules against a temporary SQLite database (`TRACKER_DB`);
-  - both agents (hand-written and LangGraph), using scripted fake models;
+  - both agents (hand-written and LangGraph, with both graphs), using scripted fake models;
   - the eval scoring.
 - **GitHub Actions** runs pytest and ruff on every push and pull request.
 - **Secret and personal-data checks** ([.pre-commit-config.yaml](.pre-commit-config.yaml)) run on every commit once installed with `uv run pre-commit install`. In CI, gitleaks also scans the whole git history. The checks block:
@@ -263,6 +305,7 @@ src/cv_server/postings.py  saved job postings: header parsing, safe names, savin
 src/tracker_server/        MCP server for applications and drafts: store.py (SQLite rules), server.py (tools)
 src/job_agent/agent.py     agent loop, providers, CLI
 src/job_agent/graph_agent.py  the same agent on LangChain / LangGraph (job-graph)
+src/job_agent/state_graph.py  create_agent's graph built by hand (job-graph --graph explicit)
 src/job_agent/scoring.py   eval scoring (job-score)
 scripts/                   build_letters.py, import_applications.py (letters -> tracker), show_cited.py, try_client.py
 tests/                     pytest suite and fixtures
@@ -272,5 +315,6 @@ tests/                     pytest suite and fixtures
 
 - [x] Measure the prompt change (impact/outcome searches, second-person writing)
 - [ ] Embedding search alongside keywords, to catch evidence phrased differently from the query
-- [ ] A second posting and answer key, to check the findings generalise
-- [ ] Phase 3: rebuild the agent in LangGraph and compare it on the same evals
+- [x] More postings and answer keys, to check the findings generalise (three so far)
+- [x] Phase 3: rebuild the agent in LangGraph and compare it on the same evals, first with `create_agent`, then as a hand-built `StateGraph`
+- [ ] A multi-step graph: extract requirements, match each in parallel, draft, verify citations, and pause for approval before writing to the tracker
