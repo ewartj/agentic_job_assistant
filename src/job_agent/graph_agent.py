@@ -13,6 +13,8 @@ What LangChain replaces from agent.py:
     run_agent's for-loop              -> create_agent(): a two-node graph, model <-> tools
     the turn cap                      -> LangGraph's recursion_limit
 
+With --graph explicit, the same graph is built by hand instead (state_graph.py).
+
 What stays ours: the prompt, the MCP connection, and the trace that job-score reads.
 
 Why there's an adapter here: langchain-mcp-adapters (the usual way to load MCP
@@ -42,7 +44,6 @@ from job_agent.agent import (
     CV_ID,
     FULL_CONTEXT_SUFFIX,
     MAX_TURNS,
-    NORMAL_STOPS,
     OLLAMA_NUM_CTX,
     ROOT,
     RUNS_DIR,
@@ -51,9 +52,11 @@ from job_agent.agent import (
     ToolRequest,
     Trace,
     Turn,
+    answer_stop,
     call_mcp_tool,
     load_full_cv,
 )
+from job_agent.state_graph import build_graph
 
 # --- MCP tools -> LangChain tools ---------------------------------------------
 
@@ -147,6 +150,13 @@ def to_turns(updates: list[tuple[float, str, list[Any]]]) -> list[Turn]:
 
 # --- Run ----------------------------------------------------------------------
 
+def build_agent(model: BaseChatModel, tools: list[StructuredTool], system: str = SYSTEM_PROMPT,
+                max_turns: int = MAX_TURNS, graph: str = "prebuilt"):
+    if graph == "explicit":
+        return build_graph(model, tools, system, max_turns)
+    return create_agent(model, tools, system_prompt=system)
+
+
 async def run_graph_agent(
     model: BaseChatModel,
     tools: list[StructuredTool],
@@ -155,12 +165,17 @@ async def run_graph_agent(
     mode: str = "tools",
     max_turns: int = MAX_TURNS,
     provider: str = "langgraph",
+    graph: str = "prebuilt",
 ) -> Trace:
+    """Run either graph: "prebuilt" (create_agent) or "explicit" (state_graph.build_graph)."""
     trace = Trace(task=task, provider=provider, model=model_name(model), mode=mode)
-    agent = create_agent(model, tools, system_prompt=system)
+    agent = build_agent(model, tools, system, max_turns, graph)
 
-    # Each turn is two graph steps (model, then tools), so this caps turns like agent.py's loop.
-    config = {"recursion_limit": 2 * max_turns + 1}
+    # Each turn is two graph steps (model, then tools), so this caps turns like agent.py's loop:
+    # the last turn's tools run, then the next model call is refused. (2 * max_turns + 1, used
+    # until step 4, allowed one extra model call.) The explicit graph caps turns itself and
+    # ends just before this is reached.
+    config = {"recursion_limit": 2 * max_turns}
     updates: list[tuple[float, str, list[Any]]] = []
     last = time.perf_counter()
     try:
@@ -179,10 +194,12 @@ async def run_graph_agent(
     trace.turns = to_turns(updates)
     final = next((m for _, node, msgs in reversed(updates) if node == "model" for m in reversed(msgs)
                   if isinstance(m, AIMessage)), None)
-    if final is not None and not final.tool_calls and not trace.stop:
-        trace.final_answer = final.text
-        reason = stop_reason(final)
-        trace.stop = "done" if reason in NORMAL_STOPS else reason
+    if final is not None and not trace.stop:
+        if final.tool_calls:
+            trace.stop = "turn_cap"  # the explicit graph ended after the last turn's tools
+        else:
+            trace.final_answer = final.text
+            trace.stop = answer_stop(final.text, stop_reason(final))
     trace.stop = trace.stop or "unknown"
     trace.cited_ids = sorted(set(CV_ID.findall(trace.final_answer)))
     return trace
@@ -212,8 +229,12 @@ async def amain(args: argparse.Namespace) -> None:
                 tools += await mcp_tools(await connect("tracker-server"), read_only=True)
         else:
             system, tools = SYSTEM_PROMPT + FULL_CONTEXT_SUFFIX.format(cv=await load_full_cv(cv)), []
+        if args.draw:
+            print(build_agent(model, tools, system, args.max_turns, args.graph).get_graph().draw_mermaid())
+            return
+        label = "stategraph" if args.graph == "explicit" else "langgraph"
         trace = await run_graph_agent(model, tools, task, system, args.mode, args.max_turns,
-                                      provider=f"langgraph-{args.provider}")
+                                      provider=f"{label}-{args.provider}", graph=args.graph)
 
     RUNS_DIR.mkdir(parents=True, exist_ok=True)
     out = RUNS_DIR / f"{args.posting.stem}.jsonl"
@@ -246,4 +267,7 @@ def main() -> None:
     parser.add_argument("--num-ctx", type=int, default=OLLAMA_NUM_CTX, help="Ollama context window in tokens")
     parser.add_argument("--with-tracker", action="store_true",
                         help="also offer tracker-server's read-only tools (applications, drafts)")
+    parser.add_argument("--graph", choices=["prebuilt", "explicit"], default="prebuilt",
+                        help="create_agent's graph, or the same graph built by hand (state_graph.py)")
+    parser.add_argument("--draw", action="store_true", help="print the graph as a Mermaid diagram and exit")
     asyncio.run(amain(parser.parse_args()))

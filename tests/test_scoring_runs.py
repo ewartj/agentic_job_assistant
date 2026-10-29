@@ -43,6 +43,12 @@ def test_full_context_has_no_retrieval_and_no_made_up():
     assert s.made_up == []
 
 
+def test_an_old_empty_done_trace_is_reported_as_empty_answer():
+    assert score_run({**run([], ["cv-001"]), "final_answer": ""}, REQUIREMENTS).stop == "empty_answer"
+    assert score_run({**run([], ["cv-001"]), "final_answer": "No fit."}, REQUIREMENTS).stop == "done"
+    assert score_run({**run([], []), "stop": "turn_cap", "final_answer": ""}, REQUIREMENTS).stop == "turn_cap"
+
+
 def test_nothing_cited():
     s = score_run(run([], ["cv-001"]), REQUIREMENTS)
     assert s.citation_recall == 0.0

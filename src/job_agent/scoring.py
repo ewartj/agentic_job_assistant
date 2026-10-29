@@ -93,7 +93,8 @@ def score_run(run: dict[str, Any], requirements: list[Requirement]) -> RunScore:
     return RunScore(
         started_at=run["started_at"],
         config=f"{run['provider']}/{run['model']} [{run['mode']}]",
-        stop=run["stop"],
+        # Traces from before empty_answer existed recorded an empty reply as "done".
+        stop="empty_answer" if run["stop"] == "done" and not run.get("final_answer", "x").strip() else run["stop"],
         retrieval_recall=ratio(retrieved, expected) if tools_mode else None,
         citation_recall=ratio(cited, expected) or 0.0,
         citation_precision=ratio(valid, cited),

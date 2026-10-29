@@ -40,6 +40,18 @@ CV_ID = re.compile(r"\bcv-\d{3}\b")
 # Anything else without tool calls - refusal, max_tokens, length - is recorded as-is.
 NORMAL_STOPS = {"end_turn", "stop"}
 
+
+def answer_stop(text: str, stop_reason: str) -> str:
+    """The trace's stop for a turn with no tool calls - the model's final reply.
+
+    A normal stop with no text is "empty_answer", not "done": qwen has spent its
+    answering turn on thinking and returned nothing, which would otherwise look
+    like a finished run that cited nothing.
+    """
+    if stop_reason not in NORMAL_STOPS:
+        return stop_reason
+    return "done" if text.strip() else "empty_answer"
+
 SYSTEM_PROMPT = """\
 You assess how well the user's experience fits a job posting.
 
@@ -125,7 +137,7 @@ class Trace:
     mode: str
     turns: list[Turn] = field(default_factory=list)
     final_answer: str = ""
-    stop: str = ""  # "done" | "turn_cap" | the provider's stop reason (e.g. "refusal")
+    stop: str = ""  # "done" | "turn_cap" | "empty_answer" | the provider's stop reason (e.g. "refusal")
     cited_ids: list[str] = field(default_factory=list)
     started_at: str = field(default_factory=lambda: datetime.now().isoformat(timespec="seconds"))
 
@@ -331,7 +343,7 @@ async def run_agent(
             # No tool calls means the model has answered. A Claude "refusal" or
             # "max_tokens" stop is kept as-is so it shows up in the trace.
             trace.final_answer = step.text
-            trace.stop = "done" if step.stop_reason in NORMAL_STOPS else step.stop_reason
+            trace.stop = answer_stop(step.text, step.stop_reason)
             break
 
         # All results for the turn go back together, in one message.
