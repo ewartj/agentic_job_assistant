@@ -55,6 +55,7 @@ from job_agent.agent import (
     answer_stop,
     call_mcp_tool,
     load_full_cv,
+    utf8_output,
 )
 from job_agent.state_graph import build_graph
 
@@ -91,8 +92,13 @@ async def mcp_tools(session: ClientSession, read_only: bool = False) -> list[Str
 
 # --- Models -------------------------------------------------------------------
 
-def make_model(provider: str, model: str | None, num_ctx: int = OLLAMA_NUM_CTX) -> BaseChatModel:
-    """The same settings as agent.py's providers, so only the framework differs."""
+def make_model(provider: str, model: str | None, num_ctx: int = OLLAMA_NUM_CTX,
+               think: bool | None = None) -> BaseChatModel:
+    """The same settings as agent.py's providers, so only the framework differs.
+
+    think=False turns off a thinking model's reasoning (Ollama only); None leaves
+    the model's default, which for qwen3.5 is to think.
+    """
     if provider == "claude":
         from langchain_anthropic import ChatAnthropic
 
@@ -105,7 +111,8 @@ def make_model(provider: str, model: str | None, num_ctx: int = OLLAMA_NUM_CTX) 
 
     # num_ctx matters as much here as in agent.py: Ollama silently drops the oldest
     # messages (the system prompt and posting) when the context overflows.
-    return ChatOllama(model=model or "qwen3.5:9b", base_url=os.environ.get("OLLAMA_HOST"), num_ctx=num_ctx)
+    return ChatOllama(model=model or "qwen3.5:9b", base_url=os.environ.get("OLLAMA_HOST"), num_ctx=num_ctx,
+                      reasoning=think)
 
 
 def model_name(model: BaseChatModel) -> str:
@@ -212,7 +219,7 @@ def server(name: str) -> StdioServerParameters:
 async def amain(args: argparse.Namespace) -> None:
     _, posting = split_front_matter(args.posting.read_text(encoding="utf-8"))
     task = TASK_TEMPLATE.format(posting=posting)
-    model = make_model(args.provider, args.model, args.num_ctx)
+    model = make_model(args.provider, args.model, args.num_ctx, think=False if args.no_think else None)
 
     async with AsyncExitStack() as stack:
         async def connect(name: str) -> ClientSession:
@@ -233,8 +240,9 @@ async def amain(args: argparse.Namespace) -> None:
             print(build_agent(model, tools, system, args.max_turns, args.graph).get_graph().draw_mermaid())
             return
         label = "stategraph" if args.graph == "explicit" else "langgraph"
+        provider = f"{label}-{args.provider}" + ("-nothink" if args.no_think else "")
         trace = await run_graph_agent(model, tools, task, system, args.mode, args.max_turns,
-                                      provider=f"{label}-{args.provider}", graph=args.graph)
+                                      provider=provider, graph=args.graph)
 
     RUNS_DIR.mkdir(parents=True, exist_ok=True)
     out = RUNS_DIR / f"{args.posting.stem}.jsonl"
@@ -257,6 +265,7 @@ async def amain(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
+    utf8_output()
     load_dotenv(ROOT / ".env")
     parser = argparse.ArgumentParser(description="Assess fit for a job posting - LangGraph version of job-agent.")
     parser.add_argument("posting", type=Path, help="text/markdown file containing the job posting")
@@ -269,5 +278,10 @@ def main() -> None:
                         help="also offer tracker-server's read-only tools (applications, drafts)")
     parser.add_argument("--graph", choices=["prebuilt", "explicit"], default="prebuilt",
                         help="create_agent's graph, or the same graph built by hand (state_graph.py)")
+    parser.add_argument("--no-think", action="store_true",
+                        help="turn off the Ollama model's thinking (recorded as e.g. stategraph-ollama-nothink)")
     parser.add_argument("--draw", action="store_true", help="print the graph as a Mermaid diagram and exit")
-    asyncio.run(amain(parser.parse_args()))
+    args = parser.parse_args()
+    if args.no_think and args.provider != "ollama":
+        parser.error("--no-think only applies to --provider ollama")
+    asyncio.run(amain(args))

@@ -416,7 +416,15 @@ async def amain(args: argparse.Namespace) -> None:
     print(f"trace appended to {out}")
 
 
+def utf8_output() -> None:
+    """Print UTF-8 whatever the console. Windows uses its legacy code page (cp1252) when
+    output is redirected, e.g. to /dev/null, and then a model's emoji crashes print()."""
+    for stream in (sys.stdout, sys.stderr):
+        stream.reconfigure(encoding="utf-8", errors="replace")
+
+
 def main() -> None:
+    utf8_output()
     # Local secrets/config from .env (gitignored; see .env.example). Variables already
     # set in the environment win, so CI and deployments don't need the file.
     load_dotenv(ROOT / ".env")
