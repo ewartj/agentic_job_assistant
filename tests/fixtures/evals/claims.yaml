@@ -1,0 +1,16 @@
+claims:
+  - sentence: I provisioned AWS with Terraform at the BBC.
+    cv_ids: [cv-001]
+    supported: false
+  - sentence: I mentored junior engineers on Python.
+    cv_ids: [cv-005]
+    supported: true
+  - sentence: I built R Shiny dashboards for clinicians.
+    cv_ids: [cv-003]
+    supported: true
+  - sentence: I have ten years of Terraform experience.
+    cv_ids: []
+    supported: false
+  - sentence: I'd love to join your team.
+    cv_ids: []
+    supported: true

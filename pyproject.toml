@@ -23,6 +23,8 @@ job-agent = "job_agent:main"
 job-score = "job_agent.scoring:main"
 job-graph = "job_agent.graph_agent:main"
 job-pipeline = "job_agent.pipeline:main"
+job-letter = "job_agent.letter:main"
+job-verify-eval = "job_agent.verify_eval:main"
 
 [build-system]
 requires = ["uv_build>=0.12.19,<0.14.0"]

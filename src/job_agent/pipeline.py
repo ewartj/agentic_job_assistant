@@ -153,7 +153,11 @@ def usage(raw: Any) -> tuple[int, int]:
     return meta.get("input_tokens", 0), meta.get("output_tokens", 0)
 
 
-def build_pipeline(model: BaseChatModel, session: ClientSession, limit: int = 10):
+def assessment_nodes(model: BaseChatModel, session: ClientSession, limit: int = 10, if_none: str = "report"):
+    """The extract node, its fan-out router and the match node, shared with letter.py.
+
+    if_none is where the router sends the run when no requirements were found.
+    """
     # include_raw keeps the AIMessage alongside the parsed object, for token counts,
     # and returns a parsing error instead of raising one.
     extractor = model.with_structured_output(Requirements, method="json_schema", include_raw=True)
@@ -174,7 +178,7 @@ def build_pipeline(model: BaseChatModel, session: ClientSession, limit: int = 10
         # One Send per requirement: LangGraph runs "match" once for each, in parallel,
         # and waits for them all before moving on to "report".
         if not state.get("requirements"):
-            return "report"
+            return if_none
         return [Send("match", MatchInput(index=i, requirement=r)) for i, r in enumerate(state["requirements"])]
 
     async def match(branch: MatchInput) -> dict[str, Any]:
@@ -203,6 +207,12 @@ def build_pipeline(model: BaseChatModel, session: ClientSession, limit: int = 10
                        summary=judgement.summary if judgement else f"Could not judge: {out['parsing_error']}",
                        turn=turn)
         return {"matches": [result]}
+
+    return extract, fan_out, match
+
+
+def build_pipeline(model: BaseChatModel, session: ClientSession, limit: int = 10):
+    extract, fan_out, match = assessment_nodes(model, session, limit)
 
     def report(state: PipelineState) -> dict[str, Any]:
         return {"report": render(state.get("matches", []))}
