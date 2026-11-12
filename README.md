@@ -261,6 +261,23 @@ The claims include points from a real qwen plan that qwen's own checker flagged,
 
 Claude's plan is specific, and it names the gaps honestly (no CDK or CloudFormation, no formal TDD) instead of presenting them as strengths. qwen's first draft adds details your CV doesn't contain ("auditable", "federated", "SQL optimisation", "sole technical ownership"). The checker catches them and qwen fixes them, but its points are vaguer afterwards. The one point left unsupported is a correct catch: two projects merged into one tool.
 
+## Tailored CVs: `src/job_agent/cv.py`
+
+The same graph as the letter plan (extract, match, draft, check each point, fix by patching), applied to your own CV as a Word template. Three settings change, through `letter.Drafting`:
+
+| | Letter plan | CV |
+|---|---|---|
+| Sections | 4–5 paragraphs the model chooses | Profile, Key Skills, then one section per job in the template |
+| Evidence shown | The matched entries | Every entry, grouped by the job it belongs to, so every job gets bullets whatever the posting asks for |
+| Allowed citations | Any entry | **A job's bullets may cite only that job's entries.** This is checked in code, without a model call, so work can't move to the wrong employer |
+
+- **Facts are never generated.** The name, contact line, job titles and dates, education, publications and projects are left exactly as they are in the template. Only the profile, the skills lines and each job's bullets are replaced, and the template's own paragraphs are cloned, so fonts, bold category labels and bullet styles carry over.
+- **The CV stays the same length.** The prompt gives each job's current bullet count. Without it, the first run wrote 9 bullets for a job the template gives 6, making the CV about a third longer.
+- **Inputs are personal and stay in `data/`:** `cv_template.docx` (your CV), and `cv_employers.yaml`, which says which job each CV entry belongs to and how each job's header reads in the template. The employer of each entry was suggested from its text and then reviewed by hand: 17 of the 78 couldn't be told from the text alone.
+- **Output:** `data/drafts/<posting>.cv.docx`, plus `<posting>.cv_plan.md` with every bullet's citations, for checking.
+
+On the senior ML engineer posting with Claude: 22 points, unsupported 4, then 1, then 0 over 3 drafts, with nothing dropped. The checker refused to call unit testing "TDD", and stopped mentoring that one entry credits to a researcher from being credited to analysts as well.
+
 ## Evals: `src/job_agent/scoring.py`
 
 For each posting, I write an answer key (`data/evals/<posting>.yaml`). For each requirement it lists the CV entries that **must** be cited (`expected`) and those that are **fine** to cite (`acceptable`):
@@ -388,6 +405,9 @@ uv run job-letter data/evals/postings/example.md
 uv run job-letter data/evals/postings/example.md --provider ollama --no-think --checker claude   # plan locally, check with Claude
 uv run job-verify-eval   # score the checker on the labelled claims
 
+# Tailor your CV (data/cv_template.docx) to a posting, checking every bullet
+uv run job-cv data/evals/postings/example.md
+
 # Score runs against the answer key
 uv run job-score example --runs
 uv run job-score example --since 2026-10-16T16:00   # only runs since a change
@@ -441,6 +461,7 @@ src/job_agent/state_graph.py  create_agent's graph built by hand (job-graph --gr
 src/job_agent/pipeline.py  extract -> parallel match -> report (job-pipeline)
 src/job_agent/letter.py    extract -> match -> draft <-> check, cover letter plans (job-letter)
 src/job_agent/verify_eval.py  scores the letter checker on labelled claims (job-verify-eval)
+src/job_agent/cv.py        the CV tailored to a posting, written into your Word template (job-cv)
 src/job_agent/scoring.py   eval scoring (job-score)
 scripts/                   build_letters.py, import_applications.py (letters -> tracker), show_cited.py, try_client.py
 tests/                     pytest suite and fixtures

@@ -33,7 +33,9 @@ import operator
 import re
 import sys
 import time
+from collections.abc import Awaitable, Callable
 from contextlib import AsyncExitStack
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any, TypedDict
@@ -86,8 +88,8 @@ them on the posting.
 - Shape the plan like the example letters, in UK English."""
 
 FIX_PROMPT = """\
-You fix points in a cover letter plan that a checker found unsupported by the CV \
-entries they cite.
+You fix points in a cover letter plan or a CV that a checker found unsupported by the \
+CV entries they cite.
 
 For each point listed, return a fix with its id. Make the smallest change that makes \
 the point true, keeping as much of it as you can:
@@ -99,12 +101,13 @@ as motivation that claims nothing about past work.
 Set drop=true only if nothing true would remain. Return nothing for points that \
 aren't listed - the rest of the plan stays as it is.
 
-The plan's rules still apply: use only ids from the CV entries below and say only \
-what they say; don't merge details from different projects into one; leave cv_ids \
-empty only for motivation or the posting; write as the user would, in UK English."""
+The plan's rules still apply: use only ids from the CV entries below - for a CV, only \
+the entries listed under the point's own section - and say only what they say; don't \
+merge details from different projects into one; leave cv_ids empty only for motivation \
+or the posting; write as the user would, in UK English."""
 
 CHECK_PROMPT = """\
-You check one point from a cover letter plan against the CV entries it cites.
+You check one point from a cover letter plan or a CV against the CV entries it cites.
 
 The point is supported if every specific fact in it - employer, project, role, \
 tool, technology, number, outcome, date - is stated in the cited entries or follows \
@@ -120,10 +123,10 @@ both, but it mustn't merge them into one piece of work: details from one project
 can't be presented as happening in, or alongside, the other.
 
 If anything is unsupported, set supported to false and say exactly what, e.g. \
-"cv-007 is from GOSH, not BBC" or "no cited entry mentions AWS CDK"."""
+"cv-007 is from Acme, not Globex" or "no cited entry mentions AWS CDK"."""
 
 UNCITED_PROMPT = """\
-You check one point from a cover letter plan that cites no CV entries.
+You check one point from a cover letter plan or a CV that cites no CV entries.
 
 Motivation and interest never need evidence, even though they're about the user: \
 what they want, what draws them to the company or role, what they're keen to learn \
@@ -174,6 +177,7 @@ class Fixes(BaseModel):
 
 class PlanPoint(TypedDict):
     pid: str  # stable across redrafts, so fixes and verdicts can refer to it
+    section: str  # the paragraph (letter) or CV section it belongs to
     text: str  # without citations
     cv_ids: list[str]
 
@@ -186,6 +190,7 @@ class PlanParagraph(TypedDict):
 
 class Claim(TypedDict):
     pid: str
+    section: str
     index: int  # the point's position in the plan
     sentence: str  # the point, without its citations
     cv_ids: list[str]
@@ -252,7 +257,8 @@ def to_plan(outline: Outline) -> list[PlanParagraph]:
         points = []
         for point in paragraph.points:
             n += 1
-            points.append(PlanPoint(pid=f"p{n}", text=strip_citations(point.text).strip(), cv_ids=point_ids(point)))
+            points.append(PlanPoint(pid=f"p{n}", section=paragraph.title,
+                                    text=strip_citations(point.text).strip(), cv_ids=point_ids(point)))
         plan.append(PlanParagraph(title=paragraph.title, purpose=paragraph.purpose, points=points))
     return plan
 
@@ -261,7 +267,7 @@ def plan_claims(plan: list[PlanParagraph]) -> list[Claim]:
     """Every point is a claim, cited or not: a point with no ids is checked for stating
     a fact without evidence, so leaving out citations can't get past the checker.
     The purpose sentences are guidance for the user, not claims."""
-    return [Claim(pid=pt["pid"], index=n, sentence=pt["text"], cv_ids=pt["cv_ids"])
+    return [Claim(pid=pt["pid"], section=pt["section"], index=n, sentence=pt["text"], cv_ids=pt["cv_ids"])
             for n, pt in enumerate(pt for paragraph in plan for pt in paragraph["points"])]
 
 
@@ -283,7 +289,7 @@ def apply_fixes(plan: list[PlanParagraph], fixes: list[Fix], allowed: set[str]) 
             elif fix.drop or not fix.text.strip():
                 dropped.append(pt["pid"])
             else:
-                points.append(PlanPoint(pid=pt["pid"], text=strip_citations(fix.text).strip(),
+                points.append(PlanPoint(pid=pt["pid"], section=pt["section"], text=strip_citations(fix.text).strip(),
                                         cv_ids=text_ids(fix.text, fix.cv_ids)))
                 changed.add(pt["pid"])
         if points:
@@ -310,10 +316,35 @@ def strip_citations(text: str) -> str:
 
 # --- The graph ------------------------------------------------------------------
 
+EntryText = Callable[[str], Awaitable[str | None]]
+
+
+@dataclass
+class Drafting:
+    """What changes between a letter plan and a CV (cv.py): everything else - matching,
+    checking, patch-based fixing, the loop - is shared.
+
+    evidence  builds the evidence block the planner and fixer see (default: the
+              requirement verdicts and the matched entries' text)
+    allowed   section -> the only ids its points may cite, or None for any. A point
+              citing anything else fails without a model call: on a CV, a bullet must
+              come from its own job
+    examples  fetch past letters from the tracker; False uses the examples passed in
+    """
+    prompt: str = ""
+    evidence: Callable[["LetterState", EntryText], Awaitable[str]] | None = None
+    allowed: Callable[[str], set[str] | None] | None = None
+    examples: bool = True
+    examples_label: str = "Example letters (for tone and structure only)"
+    noun: str = "letter"
+
+
 def build_letter_graph(model: BaseChatModel, cv: ClientSession, tracker: ClientSession | None = None,
-                       limit: int = 10, checker_model: BaseChatModel | None = None):
+                       limit: int = 10, checker_model: BaseChatModel | None = None,
+                       drafting: Drafting | None = None):
     """checker_model, if given, checks the points; `model` does everything else. The
     check is small but it's where accuracy matters most, so it can be a stronger model."""
+    drafting = drafting or Drafting(prompt=PLAN_PROMPT)
     extract, fan_out, match = assessment_nodes(model, cv, limit, if_none="draft")
     checker = (checker_model or model).with_structured_output(Check, method="json_schema", include_raw=True)
     planner = model.with_structured_output(Outline, method="json_schema", include_raw=True)
@@ -331,9 +362,16 @@ def build_letter_graph(model: BaseChatModel, cv: ClientSession, tracker: ClientS
         return entries[cv_id]
 
     async def examples(state: LetterState) -> dict[str, Any]:
+        if not drafting.examples:
+            return {}  # the caller passed its own examples in the input state
         return {"examples": await interview_letters(cv, tracker)}
 
     async def evidence_block(state: LetterState) -> str:
+        if drafting.evidence:
+            return await drafting.evidence(state, entry_text)
+        return await matched_evidence(state)
+
+    async def matched_evidence(state: LetterState) -> str:
         matches = sorted(state.get("matches", []), key=lambda m: m["index"])
         ids = list(dict.fromkeys(i for m in matches for i in m["cv_ids"]))
         texts = {i: await entry_text(i) for i in ids}
@@ -352,16 +390,17 @@ def build_letter_graph(model: BaseChatModel, cv: ClientSession, tracker: ClientS
     async def first_draft(state: LetterState, started: float) -> dict[str, Any]:
         shown = "\n\n---\n\n".join(state.get("examples", [])) or "(none available)"
         out = await planner.ainvoke([
-            SystemMessage(PLAN_PROMPT),
+            SystemMessage(drafting.prompt),
             HumanMessage(f"Company: {state.get('company') or 'see the posting'}\n"
                          f"Role: {state.get('role') or 'see the posting'}\n\n{await evidence_block(state)}\n\n"
-                         f"Example letters (for tone and structure only):\n\n{shown}\n\n"
+                         f"{drafting.examples_label}:\n\n{shown}\n\n"
                          f"The posting:\n\n{state['posting']}"),
         ])
         turn = model_turn("draft 1", out["raw"], started)
         outline: Outline | None = out["parsed"]
         if outline is None:  # nothing to check; the run ends and reports it
-            return {"plan": [], "letter": f"(Could not plan the letter: {out['parsing_error']})", "to_check": [],
+            return {"plan": [], "letter": f"(Could not plan the {drafting.noun}: {out['parsing_error']})",
+                    "to_check": [],
                     "attempt": 1, "turns": [turn]}
         plan = to_plan(outline)
         return {"plan": plan, "letter": render_plan(plan), "to_check": plan_claims(plan), "attempt": 1,
@@ -400,10 +439,15 @@ def build_letter_graph(model: BaseChatModel, cv: ClientSession, tracker: ClientS
         claim = branch["claim"]
         texts = {i: await entry_text(i) for i in claim["cv_ids"]}
         unknown = [i for i, t in texts.items() if t is None]
+        allowed = drafting.allowed(claim["section"]) if drafting.allowed else None
+        outside = [i for i in claim["cv_ids"] if allowed is not None and i not in allowed]
         turns = []
         if unknown:  # no model call needed: the citation itself is wrong
             supported, problem = False, f"{', '.join(unknown)} " + ("is not a CV entry" if len(unknown) == 1
                                                                     else "are not CV entries")
+        elif outside:  # no model call needed either: the entry belongs to another section
+            supported, problem = False, (f"{', '.join(outside)} " + ("isn't" if len(outside) == 1 else "aren't")
+                                         + f" from {claim['section']}; cite only {claim['section']} entries")
         else:
             supported, problem, raw = await verify(checker, claim["sentence"], texts)
             tokens_in, tokens_out = usage(raw)
@@ -491,14 +535,18 @@ async def interview_letters(cv: ClientSession, tracker: ClientSession | None, n:
 
 async def run_letter(model: BaseChatModel, cv: ClientSession, posting: str, *, tracker: ClientSession | None = None,
                      company: str = "", role: str = "", limit: int = 10, max_concurrency: int | None = None,
-                     progress=None, checker_model: BaseChatModel | None = None) -> dict[str, Any]:
+                     progress=None, checker_model: BaseChatModel | None = None,
+                     drafting: Drafting | None = None, examples: list[str] | None = None) -> dict[str, Any]:
     """Run the graph; returns the final state plus `rounds`, a per-draft summary of the checks."""
     say = progress or (lambda line: None)
     started = time.perf_counter()
     say(f"[   0s] finding example letters, then extracting requirements with {model_name(model)}...")
     state: dict[str, Any] = {}
-    async for mode, chunk in build_letter_graph(model, cv, tracker, limit, checker_model).astream(
-            {"posting": posting, "company": company, "role": role},
+    inputs = {"posting": posting, "company": company, "role": role}
+    if examples is not None:
+        inputs["examples"] = examples
+    async for mode, chunk in build_letter_graph(model, cv, tracker, limit, checker_model, drafting).astream(
+            inputs,
             {"max_concurrency": max_concurrency}, stream_mode=["updates", "values"]):
         if mode == "values":
             state = chunk
@@ -531,6 +579,20 @@ async def run_letter(model: BaseChatModel, cv: ClientSession, posting: str, *, t
         for cs in [[c for c in state.get("checks", []) if c["attempt"] == a]]
     ]
     return state
+
+
+def round_report(rounds: list[dict[str, Any]]) -> list[str]:
+    """One line per draft, then what was dropped, removed or still unsupported in it."""
+    lines = []
+    for r in rounds:
+        changes = "" if r["attempt"] == 1 else f", {r['rechecked']} rechecked, {len(r['dropped'])} dropped"
+        unchecked = f", {len(r['unchecked'])} unchecked" if r["unchecked"] else ""
+        lines.append(f"  draft {r['attempt']}: {r['claims']} points ({r['cited']} cited{changes}), "
+                     f"{len(r['failed'])} unsupported{unchecked}")
+        lines += [f"    dropped: \"{d['sentence']}\" {d['cv_ids']}" for d in r["dropped"]]
+        lines += [f"    REMOVED SECTION: \"{title}\" - every point in it was dropped" for title in r["removed"]]
+        lines += [f"    - \"{c['sentence']}\" {c['cv_ids']}: {c['problem']}" for c in r["failed"]]
+    return lines
 
 
 async def amain(args: argparse.Namespace) -> None:
@@ -597,16 +659,7 @@ async def amain(args: argparse.Namespace) -> None:
     print(f"{record['provider']}/{record['model']}  checker={record['checker']}  drafts={record['drafts']}  "
           f"examples={record['examples']}  "
           + ("VERIFIED" if verified else "NOTHING CHECKED" if not final["claims"] else "NOT VERIFIED"))
-    for r in state["rounds"]:
-        changes = "" if r["attempt"] == 1 else f", {r['rechecked']} rechecked, {len(r['dropped'])} dropped"
-        print(f"  draft {r['attempt']}: {r['claims']} points ({r['cited']} cited{changes}), "
-              f"{len(r['failed'])} unsupported" + (f", {len(r['unchecked'])} unchecked" if r["unchecked"] else ""))
-        for d in r["dropped"]:
-            print(f"    dropped: \"{d['sentence']}\" {d['cv_ids']}")
-        for title in r["removed"]:
-            print(f"    REMOVED PARAGRAPH: \"{title}\" - every point in it was dropped")
-        for c in r["failed"]:
-            print(f"    - \"{c['sentence']}\" {c['cv_ids']}: {c['problem']}")
+    print("\n".join(round_report(state["rounds"])))
     if not verified:
         print("WARNING: the final plan still has unsupported points (listed above, and at the end of the file).")
     if removed:

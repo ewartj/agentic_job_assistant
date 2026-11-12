@@ -134,10 +134,12 @@ def test_every_point_is_a_claim_with_a_stable_id():
                           Point(text="I mentored engineers [cv-007].", cv_ids=["cv-005"])]),
     ])
     assert plan_claims(to_plan(outline)) == [
-        {"pid": "p1", "index": 0, "sentence": "I'd love to join your team.", "cv_ids": []},
-        {"pid": "p2", "index": 1, "sentence": "I provisioned AWS with Terraform.", "cv_ids": ["cv-001", "cv-002"]},
+        {"pid": "p1", "section": "Opening", "index": 0, "sentence": "I'd love to join your team.", "cv_ids": []},
+        {"pid": "p2", "section": "Infra", "index": 1, "sentence": "I provisioned AWS with Terraform.",
+         "cv_ids": ["cv-001", "cv-002"]},
         # ids in the field and any also written into the text both count
-        {"pid": "p3", "index": 2, "sentence": "I mentored engineers.", "cv_ids": ["cv-005", "cv-007"]},
+        {"pid": "p3", "section": "Infra", "index": 2, "sentence": "I mentored engineers.",
+         "cv_ids": ["cv-005", "cv-007"]},
     ]
 
 
@@ -256,14 +258,14 @@ async def test_a_citation_of_an_unknown_entry_fails_without_a_model_call():
 async def test_an_uncited_fact_fails_and_is_sent_back():
     # Real experience, but no citations - which once skipped the checker entirely.
     model = FakeModel(
-        [["I took sole ownership of Thermiator.", "I'd love to join."]],
+        [["I took sole ownership of the Acme pipeline.", "I'd love to join."]],
         fixes=[[fix("p1", "I provisioned AWS with Terraform [cv-001].")]],
-        problem_with=lambda s: "states sole ownership without citing evidence" if "Thermiator" in s else None,
+        problem_with=lambda s: "states sole ownership without citing evidence" if "Acme pipeline" in s else None,
     )
     state = await run(model)
 
     assert state["attempt"] == 2
-    assert state["rounds"][0]["failed"][0]["sentence"] == "I took sole ownership of Thermiator."
+    assert state["rounds"][0]["failed"][0]["sentence"] == "I took sole ownership of the Acme pipeline."
     assert "without citing evidence" in model.fix_prompts[0][-1]
     assert not state["rounds"][1]["failed"]
     assert model.checked.count("I'd love to join.") == 1  # carried over, not checked again
@@ -410,5 +412,5 @@ async def test_a_checker_model_checks_the_points_and_the_main_model_plans():
 def test_a_problem_is_cut_to_its_first_line_and_capped():
     from job_agent.letter import short
 
-    assert short("cv-007 is from GOSH.\n\nLet's look again... Trick 1: plural vs singular") == "cv-007 is from GOSH."
+    assert short("cv-007 is from Acme.\n\nLet's look again... Trick 1: plural vs singular") == "cv-007 is from Acme."
     assert len(short("word " * 200)) <= 303 and short("word " * 200).endswith("...")

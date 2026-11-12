@@ -12,6 +12,7 @@ dependencies = [
     "langgraph>=1.2.16",
     "mcp[cli]>=2.2.0",
     "ollama>=0.6.3",
+    "python-docx>=1.2.0",
     "python-dotenv>=1.2.4",
     "pyyaml>=6.0.3",
 ]
@@ -25,6 +26,7 @@ job-graph = "job_agent.graph_agent:main"
 job-pipeline = "job_agent.pipeline:main"
 job-letter = "job_agent.letter:main"
 job-verify-eval = "job_agent.verify_eval:main"
+job-cv = "job_agent.cv:main"
 
 [build-system]
 requires = ["uv_build>=0.12.19,<0.14.0"]
