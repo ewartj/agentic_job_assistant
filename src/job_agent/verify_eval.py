@@ -8,7 +8,7 @@ itself against hand-labelled claims in data/evals/claims.yaml:
       - sentence: I secured database credentials with HashiCorp Vault at the BBC.
         cv_ids: [cv-007]
         supported: false
-        note: cv-007 is from GOSH   # optional, why
+        note: cv-007 is from a different employer   # optional, why
 
     uv run job-verify-eval
     uv run job-verify-eval --provider ollama --no-think
