@@ -44,7 +44,16 @@ from mcp.client.stdio import stdio_client
 from cv_server.postings import split_front_matter
 from job_agent.agent import OLLAMA_NUM_CTX, ROOT, utf8_output
 from job_agent.graph_agent import make_model, model_name, server
-from job_agent.letter import DRAFTS_DIR, Drafting, EntryText, LetterState, render_plan, round_report, run_letter
+from job_agent.letter import (
+    DRAFTS_DIR,
+    Drafting,
+    EntryText,
+    LetterState,
+    is_verified,
+    plan_document,
+    round_report,
+    run_letter,
+)
 from job_agent.pipeline import LABELS
 
 TEMPLATE = ROOT / "data" / "cv_template.docx"
@@ -227,6 +236,15 @@ def write_cv(template_path: Path, employers: Employers, plan: list[dict[str, Any
     return warnings
 
 
+def save_cv(state: dict[str, Any], template_path: Path, employers: Employers, drafts_dir: Path, stem: str,
+            role: str | None) -> tuple[Path, Path, list[str]]:
+    """Write the .docx and its plan (with citations); returns both paths and any warnings."""
+    docx_path, plan_path = drafts_dir / f"{stem}.cv.docx", drafts_dir / f"{stem}.cv_plan.md"
+    warnings = write_cv(template_path, employers, state.get("plan", []), docx_path)
+    plan_path.write_text(plan_document(state, f"CV plan: {role or stem}", what="Sections"), encoding="utf-8")
+    return docx_path, plan_path, warnings
+
+
 # --- The drafting settings --------------------------------------------------------------
 
 def cv_drafting(employers: Employers, template: Template) -> Drafting:
@@ -284,16 +302,10 @@ async def amain(args: argparse.Namespace) -> None:
                                  drafting=cv_drafting(employers, template), examples=[template.current()],
                                  progress=lambda line: print(line, file=sys.stderr, flush=True))
 
-    final = state["rounds"][-1] if state["rounds"] else {"failed": [], "claims": 0}
-    verified = bool(final["claims"]) and not final["failed"]
+    verified = is_verified(state["rounds"])
     stem = args.posting.stem
-    out = DRAFTS_DIR / f"{stem}.cv.docx"
-    warnings = write_cv(args.template, employers, state.get("plan", []), out)
-    plan_md = f"# CV plan: {meta.get('role') or stem}\n\n{render_plan(state.get('plan', []))}\n"
-    if final["failed"]:
-        plan_md += "\n## Still unsupported - fix in the .docx before sending\n\n" + "\n".join(
-            f"- [{c['section']}] \"{c['sentence']}\" {c['cv_ids']}: {c['problem']}" for c in final["failed"]) + "\n"
-    (DRAFTS_DIR / f"{stem}.cv_plan.md").write_text(plan_md, encoding="utf-8")
+    out, plan_path, warnings = save_cv(state, args.template, employers, DRAFTS_DIR, stem, meta.get("role"))
+    plan_md = plan_path.read_text(encoding="utf-8")
 
     CVS_DIR.mkdir(parents=True, exist_ok=True)
     record = {"started_at": datetime.now().isoformat(timespec="seconds"),
@@ -307,7 +319,7 @@ async def amain(args: argparse.Namespace) -> None:
     print(plan_md)
     print("---")
     print(f"{record['provider']}/{record['model']}  checker={record['checker']}  drafts={record['drafts']}  "
-          + ("VERIFIED" if verified else "NOTHING CHECKED" if not final["claims"] else "NOT VERIFIED"))
+          + ("VERIFIED" if verified else "NOT VERIFIED"))
     print("\n".join(round_report(state["rounds"])))
     for w in warnings:
         print(f"WARNING: {w}")

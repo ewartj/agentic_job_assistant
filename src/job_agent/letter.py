@@ -207,6 +207,8 @@ class LetterState(PipelineState, total=False):
     company: str
     role: str
     examples: list[str]
+    notes: str  # the user's requested changes, when revising an approved-for-review version
+    previous: str  # that version, as Markdown
     plan: list[PlanParagraph]  # the current plan, owned by code: the model only proposes changes
     letter: str  # the plan as Markdown, with its [cv-012] citations
     to_check: list[Claim]  # points that are new or changed in this draft
@@ -395,6 +397,7 @@ def build_letter_graph(model: BaseChatModel, cv: ClientSession, tracker: ClientS
                          f"Role: {state.get('role') or 'see the posting'}\n\n{await evidence_block(state)}\n\n"
                          f"{drafting.examples_label}:\n\n{shown}\n\n"
                          f"The posting:\n\n{state['posting']}"),
+            *revision_request(state),
         ])
         turn = model_turn("draft 1", out["raw"], started)
         outline: Outline | None = out["parsed"]
@@ -405,6 +408,14 @@ def build_letter_graph(model: BaseChatModel, cv: ClientSession, tracker: ClientS
         plan = to_plan(outline)
         return {"plan": plan, "letter": render_plan(plan), "to_check": plan_claims(plan), "attempt": 1,
                 "turns": [turn]}
+
+    def revision_request(state: LetterState) -> list[HumanMessage]:
+        if not state.get("notes"):
+            return []
+        return [HumanMessage(f"The user reviewed this version:\n\n{state.get('previous') or '(not available)'}\n\n"
+                             f"and asks for these changes:\n\n{state['notes']}\n\n"
+                             f"Write the {drafting.noun} again with those changes. Every rule still applies: "
+                             "if a change asks for something the entries don't support, leave it out.")]
 
     async def redraft(state: LetterState, attempt: int, started: float) -> dict[str, Any]:
         previous = [c for c in state.get("checks", []) if c["attempt"] == attempt - 1]
@@ -472,7 +483,10 @@ def build_letter_graph(model: BaseChatModel, cv: ClientSession, tracker: ClientS
     graph.add_node("check", check, retry_policy=pipeline.RETRY)
     graph.add_node("review", review)
     graph.add_edge(START, "examples")
-    graph.add_edge("examples", "extract")
+    # An assessment already done elsewhere (the apply workflow matches once for the letter
+    # and the CV) comes in with the input, so extract and match are skipped.
+    graph.add_conditional_edges("examples", lambda state: "draft" if "requirements" in state else "extract",
+                                ["extract", "draft"])
     graph.add_conditional_edges("extract", fan_out, ["match", "draft"])
     graph.add_edge("match", "draft")
     graph.add_conditional_edges("draft", fan_out_checks, ["check", "review"])
@@ -536,15 +550,23 @@ async def interview_letters(cv: ClientSession, tracker: ClientSession | None, n:
 async def run_letter(model: BaseChatModel, cv: ClientSession, posting: str, *, tracker: ClientSession | None = None,
                      company: str = "", role: str = "", limit: int = 10, max_concurrency: int | None = None,
                      progress=None, checker_model: BaseChatModel | None = None,
-                     drafting: Drafting | None = None, examples: list[str] | None = None) -> dict[str, Any]:
-    """Run the graph; returns the final state plus `rounds`, a per-draft summary of the checks."""
+                     drafting: Drafting | None = None, examples: list[str] | None = None,
+                     assessment: dict[str, Any] | None = None, notes: str = "", previous: str = "") -> dict[str, Any]:
+    """Run the graph; returns the final state plus `rounds`, a per-draft summary of the checks.
+
+    assessment: requirements, matches and extract_turn from a run already done, to
+    reuse instead of extracting and matching again. notes and previous: a revision.
+    """
     say = progress or (lambda line: None)
     started = time.perf_counter()
-    say(f"[   0s] finding example letters, then extracting requirements with {model_name(model)}...")
+    say(f"[   0s] drafting from the shared assessment with {model_name(model)}..." if assessment else
+        f"[   0s] finding example letters, then extracting requirements with {model_name(model)}...")
     state: dict[str, Any] = {}
-    inputs = {"posting": posting, "company": company, "role": role}
+    inputs = {"posting": posting, "company": company, "role": role, **(assessment or {})}
     if examples is not None:
         inputs["examples"] = examples
+    if notes:
+        inputs |= {"notes": notes, "previous": previous}
     async for mode, chunk in build_letter_graph(model, cv, tracker, limit, checker_model, drafting).astream(
             inputs,
             {"max_concurrency": max_concurrency}, stream_mode=["updates", "values"]):
@@ -579,6 +601,34 @@ async def run_letter(model: BaseChatModel, cv: ClientSession, posting: str, *, t
         for cs in [[c for c in state.get("checks", []) if c["attempt"] == a]]
     ]
     return state
+
+
+def is_verified(rounds: list[dict[str, Any]]) -> bool:
+    """Points were checked and none failed - never "nothing to check"."""
+    final = rounds[-1] if rounds else {"failed": [], "claims": 0}
+    return bool(final["claims"]) and not final["failed"]
+
+
+def plan_document(state: dict[str, Any], title: str, what: str = "Paragraphs") -> str:
+    """The plan as the Markdown file you work from: the plan, then anything still
+    unsupported, then what was dropped while checking, so nothing is lost silently."""
+    failed = state["rounds"][-1]["failed"] if state.get("rounds") else []
+    doc = f"# {title}\n\n{state.get('letter', '')}\n"
+    if failed:
+        doc += "\n## Still unsupported - fix or drop before writing\n\n" + "\n".join(
+            f"- \"{c['sentence']}\" {c['cv_ids']}: {c['problem']}" for c in failed) + "\n"
+    dropped = state.get("dropped", [])
+    removed = [r["title"] for r in state.get("removed", [])]
+    if dropped:  # kept so you can rescue a point by hand, with what was wrong with it
+        doc += ("\n## Dropped during checking\n\n"
+                + (f"{what} removed because all their points were dropped: {', '.join(removed)}.\n\n"
+                   if removed else "")
+                + "\n".join(f"- \"{d['sentence']}\" {d['cv_ids']}: {d['problem']}" for d in dropped) + "\n")
+    return doc
+
+
+def letter_title(company: str | None, role: str | None) -> str:
+    return "Cover letter plan" + (f": {role}" if role else "") + (f" at {company}" if company else "")
 
 
 def round_report(rounds: list[dict[str, Any]]) -> list[str]:
@@ -623,21 +673,10 @@ async def amain(args: argparse.Namespace) -> None:
                                  checker_model=checker_model)
 
     final = state["rounds"][-1] if state["rounds"] else {"failed": [], "unchecked": [], "claims": 0, "cited": 0}
-    # Verified means points were checked and none failed - never "nothing to check".
-    verified = bool(final["claims"]) and not final["failed"]
+    verified = is_verified(state["rounds"])
     company, role = args.company or meta.get("company"), args.role or meta.get("role")
-    title = "Cover letter plan" + (f": {role}" if role else "") + (f" at {company}" if company else "")
-    plan = f"# {title}\n\n{state.get('letter', '')}\n"
-    if final["failed"]:  # never leave an unsupported point unmarked in the file you write from
-        plan += "\n## Still unsupported - fix or drop before writing\n\n" + "\n".join(
-            f"- \"{c['sentence']}\" {c['cv_ids']}: {c['problem']}" for c in final["failed"]) + "\n"
-    dropped = state.get("dropped", [])
+    plan = plan_document(state, letter_title(company, role))
     removed = [r["title"] for r in state.get("removed", [])]
-    if dropped:  # kept so you can rescue a point by hand, with what was wrong with it
-        plan += ("\n## Dropped during checking\n\n"
-                 + (f"Paragraphs removed because all their points were dropped: {', '.join(removed)}.\n\n"
-                    if removed else "")
-                 + "\n".join(f"- \"{d['sentence']}\" {d['cv_ids']}: {d['problem']}" for d in dropped) + "\n")
     turns = [state["extract_turn"], *(m["turn"] for m in state.get("matches", [])), *state.get("turns", [])]
 
     stem, now = args.posting.stem, datetime.now().isoformat(timespec="seconds")

@@ -278,6 +278,27 @@ The same graph as the letter plan (extract, match, draft, check each point, fix 
 
 On the senior ML engineer posting with Claude: 22 points, unsupported 4, then 1, then 0 over 3 drafts, with nothing dropped. The checker refused to call unit testing "TDD", and stopped mentoring that one entry credits to a researcher from being credited to analysts as well.
 
+## Applying, with your approval: `src/job_agent/workflow/`
+
+`job-apply` runs everything for one posting, then **stops and waits for you** before writing anything to the tracker.
+
+```mermaid
+graph TD;
+  __start__ --> extract -.-> match --> assess;
+  assess --> letter --> review;
+  assess --> cv --> review;
+  review -.->|approve| save --> __end__;
+  review -.->|revise, with notes| letter;
+  review -.->|revise, with notes| cv;
+  review -.->|reject| __end__;
+```
+
+- **Matched once, drafted in parallel.** The letter plan and the CV share one assessment. The letter graph skips extract and match when it's given one, and the two run side by side.
+- **`interrupt()` pauses the run at `review`.** It shows the verdict counts, and for each document whether it verified, how many drafts it took and where the file is. You can approve, revise with notes (for the letter, the CV or both; only those are redrafted, checked and shown again), or reject.
+- **A SQLite checkpointer (`data/runs.db`) saves every step.** A paused run can be left: `job-apply --resume <run>` picks it up from the review in a new terminal or the next day, without drafting anything again. A run that fails part-way (a dropped model connection, say) resumes from its last completed step. The checkpointer only loads the project's own types (`Requirement`, `Turn`) besides LangGraph's, so a tampered database can't make it build arbitrary objects.
+- **The only writes come after approval.** `save` logs the application (status `interested`, linked to the posting) and saves the assessment, the letter plan and the CV plan as drafts, with the `.docx` path noted. Rejecting writes nothing.
+- **Layers:** `graph.py` (LangGraph), `service.py` (`start`, `decide`, `retry`, `view`, `runs`: the only entry point), `models.py` (Pydantic `Review`, `Decision`, `RunView`, with no LangGraph types), `cli.py`. The web interface will use the same service.
+
 ## Evals: `src/job_agent/scoring.py`
 
 For each posting, I write an answer key (`data/evals/<posting>.yaml`). For each requirement it lists the CV entries that **must** be cited (`expected`) and those that are **fine** to cite (`acceptable`):
@@ -408,6 +429,11 @@ uv run job-verify-eval   # score the checker on the labelled claims
 # Tailor your CV (data/cv_template.docx) to a posting, checking every bullet
 uv run job-cv data/evals/postings/example.md
 
+# Assess, plan the letter and tailor the CV, then approve before anything is saved
+uv run job-apply data/evals/postings/example.md
+uv run job-apply --list
+uv run job-apply --resume <run-id>
+
 # Score runs against the answer key
 uv run job-score example --runs
 uv run job-score example --since 2026-10-16T16:00   # only runs since a change
@@ -462,6 +488,7 @@ src/job_agent/pipeline.py  extract -> parallel match -> report (job-pipeline)
 src/job_agent/letter.py    extract -> match -> draft <-> check, cover letter plans (job-letter)
 src/job_agent/verify_eval.py  scores the letter checker on labelled claims (job-verify-eval)
 src/job_agent/cv.py        the CV tailored to a posting, written into your Word template (job-cv)
+src/job_agent/workflow/    the apply workflow: graph, service, models, CLI (job-apply)
 src/job_agent/scoring.py   eval scoring (job-score)
 scripts/                   build_letters.py, import_applications.py (letters -> tracker), show_cited.py, try_client.py
 tests/                     pytest suite and fixtures

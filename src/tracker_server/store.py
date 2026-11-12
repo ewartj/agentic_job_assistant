@@ -11,7 +11,8 @@ from pathlib import Path
 from typing import Any, Literal, get_args
 
 Status = Literal["interested", "applied", "interviewing", "offer", "rejected", "withdrawn"]
-DraftKind = Literal["cover_letter", "motivation", "application_answers"]  # same categories as letters.json
+# The first three are the categories in letters.json; the rest are what job-apply saves.
+DraftKind = Literal["cover_letter", "motivation", "application_answers", "assessment", "cover_letter_plan", "cv"]
 STATUSES: tuple[str, ...] = get_args(Status)
 DRAFT_KINDS: tuple[str, ...] = get_args(DraftKind)
 
