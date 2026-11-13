@@ -62,3 +62,4 @@ class RunView(BaseModel):
     status: RunStatus
     review: Review | None = None
     application_id: int | None = None
+    error: str | None = Field(default=None, description="Why a stopped run stopped, when it's known")

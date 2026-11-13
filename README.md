@@ -2,502 +2,84 @@
 
 [![tests](https://github.com/ewartj/agentic_job_assistant/actions/workflows/tests.yml/badge.svg)](https://github.com/ewartj/agentic_job_assistant/actions/workflows/tests.yml)
 
-A learning project for building MCP servers and AI agents. It has these parts:
+A learning project in building MCP servers and AI agents, applied to job applications. Given a job posting, it:
 
-- **An MCP server** (`cv-server`) that exposes my CV, past job-application letters and saved job postings as tools and resources.
-- **A second MCP server** (`tracker-server`) that records applications and drafts in SQLite. Its tools write data, not just read it.
-- **A hand-written agent loop** (`job-agent`) that reads a job posting, searches the CV through the MCP server, and writes a fit assessment that cites the evidence behind every claim.
-- **An eval harness** (`job-score`) that scores the agent's runs against an answer key I wrote by hand.
+- **assesses your fit,** requirement by requirement, citing the CV evidence behind every verdict;
+- **plans a cover letter:** paragraph by paragraph, each point citing its evidence;
+- **tailors your CV** in your own Word template, choosing and rewording bullets for the role;
+- **checks every claim** against the CV entries it cites, and fixes what isn't supported;
+- **waits for your approval** before saving anything to your application tracker.
 
-The agent loop is deliberately written without a framework, so that every step is visible. The next phase rebuilds it in LangGraph and compares the two using the same evals.
+It runs on Claude, or on a local model through Ollama, and every step is measured against hand-written answer keys.
 
-## How it fits together
+## How it works
 
 ```
-job posting ──► job-agent ──(MCP over stdio)──► cv-server ──► data/cv.json, data/letters.json
-                   │  ▲
-                   ▼  │ tool calls / results
-                 LLM (Claude API or a local model via Ollama)
-                   │
-                   ▼
-   answer + trace ──► data/evals/runs/<posting>.jsonl ──► job-score (vs. data/evals/<posting>.yaml)
+posting ─► extract requirements ─► match each one in parallel ─► letter plan ∥ tailored CV ─► check each point
+                                                                                                    │
+            tracker ◄── save (only after you approve) ◄── review: approve / revise / reject ◄───────┘
 ```
 
-## The MCP server: `src/cv_server/`
+- **Two MCP servers:** one reads the CV, past letters and saved postings; the other records applications and drafts.
+- **LangGraph runs the steps.** It matches in parallel, loops between checking and fixing, pauses for your review, and saves every step, so a paused run can be picked up later.
+- **Use it from the terminal (`job-apply`) or over HTTP (`job-web`).** A React front end is next.
 
-It's built with the `mcp` 2.x Python SDK. In 2.x, `FastMCP` was renamed `MCPServer`, which most tutorials don't mention yet.
+[Architecture](docs/architecture.md) has the full picture and the layers.
 
-**Tools** (the model decides when to call them):
+## Results so far
 
-| Tool | What it does |
-|---|---|
-| `get_cv_evidence(query, limit=10)` | Searches the CV and returns matching entries, each with an `id` the model must cite |
-| `get_past_letters(company)` | Returns cover letters previously written to a company (a case-insensitive substring match) |
-| `list_past_applications()` | Lists every application on file, without the letter text |
-
-**Resources** (the client application decides what to read into context):
-
-| Resource | Returns |
-|---|---|
-| `cv://full`, `cv://entry/{entry_id}` | The whole CV, or one entry |
-| `postings://index` | Every saved job posting: name, company, role, url and date saved |
-| `postings://posting/{name}` | One posting's text, without its header |
-
-Postings are resources rather than tools because the user chooses the posting, not the model. They're read from disk on every request, so a newly saved posting appears without restarting the server. Posting names are validated before they become file paths, so a request like `postings://posting/../../.env` is rejected.
-
-**Search** is keyword-based. It weights each match by how rare the term is across the CV (IDF), so "parquet" counts for more than "code". On top of that:
-- Tag matches score double compared with matches in the text.
-- Adjacent query words found together as a phrase, such as "code review", score a bonus.
-- Short terms like "R" or "CI" must match a whole word; longer terms match the start of a word, so "test" finds "testing".
-- Tags help the search but are never sent to the model.
-
-## The tracker server: `src/tracker_server/`
-
-It keeps job applications, their status history and versioned drafts in SQLite (`data/tracker.db`, gitignored). It's split into `store.py`, plain SQLite functions holding the rules, and `server.py`, a thin MCP layer on top.
-
-| Tool | Writes? | What it does |
+| | Claude Haiku | qwen3.5:9b (local) |
 |---|---|---|
-| `log_application(company, role, ...)` | Yes, idempotent | Records an application. Logging the same company and role again returns the existing record with `created: false`. |
-| `update_status(application_id, status, note)` | Yes, idempotent | Changes the status (interested → applied → interviewing → offer / rejected / withdrawn). Every change is kept in the history. |
-| `save_draft(application_id, kind, text)` | Yes | Saves a cover letter, motivation or application answers. Saving again adds a new version; nothing is overwritten. |
-| `list_applications(status)`, `get_application(id)`, `get_draft(id, kind, version)` | No | Read applications, history and drafts |
+| Must-cite evidence cited, one agent doing everything | 85% | 62% |
+| The same, with the work split into steps | 86–92% | 74–85% |
+| Checker: unsupported claims caught | 14–15 of 15 | 15 of 15 |
+| Checker: supported claims wrongly flagged | 0 of 17 | 3 of 17 |
 
-What's different about a server whose tools write:
-- **Tool annotations.** Each tool declares `read_only_hint`, `destructive_hint`, `idempotent_hint` and `open_world_hint`, so a client can, for example, ask the user before running a write. No tool here deletes or overwrites anything.
-- **Idempotency.** A model may retry a call. Logging an application twice or setting the same status twice changes nothing. A database `UNIQUE` constraint (ignoring case) backs up the duplicate check.
-- **Enums in the schema.** Statuses and draft kinds are `Literal` types, so the tool schema lists the allowed values and the model sees them before calling.
-- **Errors the model can act on.** In mcp 2.x, only a `ToolError`'s message reaches the model; any other exception is reported as a generic crash, so internals don't leak. Bad input becomes a `ToolError` with a message saying what to do, such as "No application with id 99 - call list_applications to see the ids".
+Splitting the work helped the small model most: it only has to judge, not plan. Claude checks every claim, whichever model drafts. The details and their limits are in [evals](docs/evals.md), [the pipeline](docs/pipeline.md) and [letter plans and CVs](docs/letters-and-cvs.md).
 
-## The agent: `src/job_agent/agent.py`
-
-The loop is about 20 lines long:
-1. The model receives the posting and the tool definitions.
-2. It asks for tool calls, the agent runs them over MCP, and the results go back to the model.
-3. This repeats until the model answers without asking for a tool, or the turn limit (8) is reached.
-
-Every run is saved as a JSON trace: the turns, the tool calls, the ids retrieved and cited, token counts and timings.
-
-- **Providers:** Claude via the Anthropic API (`claude-haiku-5-5` by default), or any local model via Ollama (`qwen3.5:9b` by default). Both sit behind a small `Provider` protocol, so the loop doesn't depend on either.
-- **Modes:**
-  - `tools`: the model has to search for evidence.
-  - `full-context`: the whole CV is placed in the prompt and no tools are given. This is the baseline that shows how much the search loses.
-- **Ollama gotcha:** Ollama's default context window is small, and it silently drops the oldest messages when the conversation is too long. That included the job posting itself. The agent sets `num_ctx` to 32k tokens and warns if a prompt fills the window.
-
-## The LangGraph agent: `src/job_agent/graph_agent.py`
-
-The same agent rebuilt on LangChain and LangGraph, with the same prompt, MCP servers and trace format, so `job-score` scores both and the comparison is like for like. Its runs are recorded as `langgraph-claude` / `langgraph-ollama`.
-
-| Hand-written (`agent.py`) | LangChain / LangGraph (`graph_agent.py`) |
-|---|---|
-| `ClaudeProvider`, `OllamaProvider` | `ChatAnthropic`, `ChatOllama`: one interface for both |
-| `to_claude_tools`, `to_ollama_tools` | `bind_tools()`, called inside `create_agent` |
-| The `for` loop in `run_agent` | `create_agent()`: a two-node graph, `model` ⇄ `tools` |
-| The turn cap | LangGraph's `recursion_limit` (two graph steps per turn) |
-
-- **MCP tools come through a small adapter of our own.** The usual package, `langchain-mcp-adapters`, requires `mcp<2.0`, and this project uses mcp 2.x. `mcp_tools()` wraps each MCP tool as a LangChain `StructuredTool` with the tool's own JSON schema. The CV ids it returns ride along as the `ToolMessage`'s `artifact`, so the trace records what was retrieved without the model seeing anything extra.
-- **`--with-tracker`** also offers `tracker-server`'s tools, filtered to those annotated `read_only_hint`, so an assessment can look up past applications but never write to the tracker.
-
-### The same graph, built by hand: `src/job_agent/state_graph.py`
-
-`--graph explicit` replaces `create_agent` with a `StateGraph` written out in full. It uses the same node names, the same request to the model and the same trace, so the tests run against both graphs and must agree. Its runs are recorded as `stategraph-claude` / `stategraph-ollama`.
-
-```mermaid
-graph TD;
-  __start__ --> model;
-  model -.->|tool calls| tools;
-  model -.->|answered| __end__;
-  tools -.->|under the turn cap| model;
-  tools -.->|turn cap reached| __end__;
-```
-
-| What `create_agent` hid | Where it is in `state_graph.py` |
-|---|---|
-| The state: a message list with an append reducer | `AgentState`, plus a `turns` counter and the `retrieved_ids` gathered from tool results |
-| Calling the model with the tools bound | `call_model`, which adds the system prompt to every call |
-| Running the tool calls | `run_tools`, which runs a turn's calls concurrently |
-| Deciding what runs next | `after_model` and `after_tools`, the conditional edges |
-| The turn cap | a counter in the state, checked by `after_tools`, rather than an exception |
-
-- **Writing it out found an off-by-one in the prebuilt version.** A `recursion_limit` of `2 * max_turns + 1` allowed one more model call than `agent.py`'s loop. It is now `2 * max_turns`, and a test checks the turn count for both graphs.
-- `uv run job-graph <posting> --graph explicit --draw` prints the graph as Mermaid.
-
-### Results: the framework changes the code, not the scores
-
-Cited (recall of must-cite ids), averaged over all runs of each setup, with the number of runs in brackets:
-
-| Posting | Hand-written | Prebuilt graph | Hand-built graph | qwen, hand-written | qwen, hand-built graph |
-|---|---|---|---|---|---|
-| Senior ML engineer | 82% (10) | 83% (5) | 80% (1) | 59% (6) | 68% (1) |
-| Data engineer | 89% (5) | 85% (4) | 85% (1) | 70% (3) | 60% (1)* |
-| Back-end software engineer | 76% (5) | 64% (5) | 65% (1) | 51% (3) | 43% (1) |
-
-\* Excludes one run with an empty answer (see below).
-
-- **All three agents send the model the same request,** and a test checks that the two graphs do. Run-to-run noise is about ±7–8 points, so the differences above are mostly noise.
-- **The back-end posting is the exception:** both graph versions trail the hand-written loop by about 11 points. Given the identical requests, the likelier cause is the queries the model happened to choose. Those runs used short one- or two-word queries, and the missed entries are the story-style ones that keyword search rarely finds. That's a search problem rather than a framework one.
-- **Every hand-built run finished in 2–4 turns.** The first turn sent all of its searches at once, up to 26, and `run_tools` ran them concurrently.
-- **qwen once returned an empty answer.** It spent its final turn thinking (877 output tokens) and produced no text, but Ollama reported a normal stop, so the trace said `done`. Both agents now record that as `stop=empty_answer`, and `job-score` flags it next to the run, including for older traces. A rerun scored normally.
-
-## The pipeline: `src/job_agent/pipeline.py`
-
-The same assessment as a multi-step graph. The agent no longer chooses its searches in one big turn: each step has one job.
-
-```mermaid
-graph TD;
-  __start__ --> extract;
-  extract -.->|one Send per requirement| match;
-  extract -.->|no requirements| report;
-  match --> report;
-  report --> __end__;
-```
-
-| Node | What it does |
-|---|---|
-| `extract` | One model call with **structured output**: the posting's requirements as a validated Pydantic list, each with 2–4 search queries (the skill, a synonym, and an outcome or story that would show it) |
-| `match` | Runs once per requirement, **in parallel** (LangGraph's `Send`). It runs that requirement's searches, then one structured-output call judges met / partly / gap and lists the supporting ids |
-| `report` | No model call: writes the verdicts up as the assessment, in the posting's order |
-
-- **The branches' results are merged by a reducer.** Every `match` branch writes to `matches` in the same step, so the field is `Annotated[list, operator.add]`. Without the reducer, LangGraph raises an error rather than keep one branch's value.
-- **Each judge sees only its requirement's evidence,** which keeps prompts small, and an id it cites without being shown shows up as made-up in `job-score`.
-- **A step that fails to parse doesn't stop the run.** `include_raw=True` returns the error instead of raising it, and the requirement is reported as "Not judged".
-- Runs are recorded as `pipeline-claude` / `pipeline-ollama`.
-
-### Results: splitting the work up finds more evidence
-
-Claude Haiku, 3 runs per posting:
-
-| Posting | Single agent (hand-written), cited | Pipeline: retrieved / cited / precision |
-|---|---|---|
-| Senior ML engineer | 82% (10 runs) | 96% / 88% / 91% |
-| Data engineer | 89% (5 runs) | 93% / 92% / 88% |
-| Back-end software engineer | 76% (5 runs) | 94% / 86% / 77% |
-
-- **Searching per requirement finds more.** Retrieval is 93–96% on every posting. Each requirement gets 2–4 queries written for it, including the kind of story that would show it ("sole ownership", "picked up quickly"), and those find the story-style entries a single search turn missed.
-- **The extractor decides what gets judged.** On its first run, the back-end posting scored 65% cited. The extractor had only listed skills from the posting's bullet points. It missed requirements stated in prose (integrating fragmented systems, learning an unfamiliar stack), and it turned "you don't need to know our stack" into "Node.js: not met". A requirement that isn't extracted is never searched for or judged. Telling the extractor to read the prose took that posting to 86%. The single agent can notice a gap partway through; the pipeline can't, so the extraction prompt matters most.
-- **Logistics have to be excluded explicitly.** The prose rule pulled "hybrid working in the office" back in, judged as "not met". A rule that comes first and applies wherever the posting mentions logistics fixed that.
-- **Precision is lower: 77–91%, against 92–96% for the single agent.** The pipeline extracts 14–18 requirements, against 7–10 in the answer keys. Evidence for the extra ones (mentoring, code review, degree) counts against precision even when it's apt. That's partly an answer-key review to do, as before.
-- **Valid citations can still back false claims.** One report said credentials were secured with Vault "at BBC", but the cited entry is from a different employer. Recall and precision can't catch that, because the id is valid. Checking each claim against the entry it cites is the next step: a verifier.
-- **Cost:** 15–19 model calls and about 45–57k input tokens per run, against 2 calls and 16–25k tokens. Each call is small, and the matches run in parallel.
-
-**With the local model** (qwen3.5:9b, one or two runs per setup, so indicative only):
-
-| Posting | Single agent, thinking on | Single agent, thinking off | Pipeline, thinking off |
-|---|---|---|---|
-| Senior ML engineer | 59% | 56% | 84% |
-| Data engineer | 70% | 60% | 85% |
-| Back-end software engineer | 51% | 35% | 74% |
-
-(cited. Thinking on: the hand-written loop, `job-agent`, 3–6 runs per posting. Thinking off: the hand-built graph, `job-graph --graph explicit --no-think`, which sends the same request.)
-
-- **The pipeline suits the small model.** qwen's weakness was judgement, not search. One requirement and its own evidence at a time is a much smaller decision than a whole assessment, and the gap to Claude narrows from about 23 points to about 7.
-- **The pipeline does the planning, so the model doesn't have to think.** Turning thinking off makes the single agent worse: it searches less (43–72% retrieved) and cites 3–16 points less. With thinking off in both setups, the pipeline beats the single agent by 25–39 points. The extractor writes the searches, which leaves the small model only the judging.
-- **Thinking is the cost on a local model.** With thinking on, each call took about 4 minutes, and runs failed when Ollama dropped queued requests. With `--no-think` a whole posting takes about 100 seconds. The pipeline also sends Ollama one request at a time (`--max-concurrency`, default 1 for Ollama) and retries a dropped connection (LangGraph's `RetryPolicy`) instead of failing the run.
-- **Its claims need checking more than Claude's.** Examples: "AWS CDK was used (cv-018)" when cv-018 is SageMaker; VPC experience "implied"; "machine learning fundamentals: gap" despite clear evidence. Each cites a valid id, so the scores don't see them. The verifier step is for these.
-
-## Cover letter plans: `src/job_agent/letter.py`
-
-The pipeline's matches feed a planner, and every cited point in the plan is checked against the entries it cites before the plan is accepted. The output is a plan to write the letter from, not the letter. For each paragraph, it gives a sentence on what the paragraph should be about and why, then suggested points, each with its citations:
-
-```markdown
-## 2. NLP in production
-
-*Show that you've taken ML from research to a live service, which is the core of this role.*
-
-- I took sole technical ownership of turning a research NLP model into a hospital-wide production system [cv-004].
-- ...
-```
-
-```mermaid
-graph TD;
-  __start__ --> examples --> extract;
-  extract -.-> match;
-  match --> draft;
-  draft -.->|one Send per cited point| check;
-  check --> review;
-  review -.->|unsupported claims, under 3 drafts| draft;
-  review -.->|all supported, or 3 drafts| __end__;
-```
-
-| Node | What it does |
-|---|---|
-| `examples` | Picks up to 2 cover letters from past applications that reached interview or offer, using the tracker's status history, as examples of tone and structure |
-| `extract`, `match` | The pipeline's nodes, reused unchanged |
-| `draft` | Plans 4–5 paragraphs with structured output from the verdicts and the matched entries' text only. Each paragraph has a title, a purpose and points; each point has its text and its `cv_ids`. Code then gives every point a stable id (`p1`, `p2`, …). On a redraft, the model sees only the failed points and their problems, and returns a fix or a drop for each. Code applies them, so points that passed can't be changed or lost |
-| `check` | One branch per new or changed point, cited or not; unchanged points keep their verdict. A cited point: does it say only what its entries say? The entry text comes from cv-server's `cv://entry/{id}` resource, and an id that isn't a CV entry fails without a model call. An uncited point: does it state any fact about you? Motivation passes; an uncited fact fails |
-| `review` | Joins the checks. The router sends the plan back to `draft` with the failures, or ends |
-
-- **The graph has a cycle,** `review → draft`, bounded by an `attempt` counter in the state (at most 3 drafts). If claims still fail after that, the run ends with a warning that lists them, rather than looping or quietly dropping them.
-- **Checks build up across rounds,** because the `checks` field's reducer adds to the list. Each check records which draft it was for, so `review` looks only at the current one.
-- **The model proposes changes; code applies them.** At first a redraft asked the model to rewrite the whole plan, fixing only the flagged points. qwen returned just the paragraph it was fixing, so a 12-point plan became 2 points, every one of which passed, and the run was reported as verified. Now the plan lives in the state, and a redraft returns only `{id, text, cv_ids}` or `{id, drop}` for the failed points. Fixes to points that passed are ignored. Dropped points are listed in the summary, so a shrinking plan is visible, and a redraft re-checks only what changed.
-- **Output:** the plan, citations kept, goes to `data/drafts/<posting>.cover_letter_plan.md`. Any points still unsupported after 3 drafts are listed at the end of that file, so you can't miss them. A trace of each draft's points and failures goes to `data/evals/letters/<posting>.jsonl`.
-
-### Checking the checker: `job-verify-eval`
-
-The loop is only as good as its checker, and recall and precision can't see a false claim that cites a valid id. `data/evals/claims.yaml` holds hand-labelled claims: the real mistakes the pipeline made (the wrong employer, AWS CDK, VPC "implied") and written variants (inflated numbers, a personal project presented as work, "working towards" a certification presented as "certified"), plus correct claims about the same entries, and uncited points of both kinds (facts and motivation).
-
-| Checker | Unsupported claims caught | Supported claims wrongly flagged |
-|---|---|---|
-| Claude Haiku (4 runs, 32 claims) | 14–15/15 | 0/17 in every run |
-| qwen3.5:9b, thinking off (32 claims) | 15/15 | 3/17 |
-
-Claude's one miss, in 3 of 4 runs, is the merged-projects claim below. qwen catches everything but flags true claims: motivation, a sentence that leaves out a detail, and the employer's own facts. That's why Claude checks.
-
-The claims include points from a real qwen plan that qwen's own checker flagged, checked by hand: two of its flags were correct, two were false alarms.
-
-- **Citations have to be part of the schema, not just a rule in the prompt.** With citations written into the text as `[cv-012]`, qwen (thinking off) wrote real evidence with no citations at all. Only cited points were checked then, so its plan was marked verified with nothing checked. Now each point has a `cv_ids` field, every point is checked, and a run with nothing checked is reported as "NOTHING CHECKED", never "VERIFIED".
-- **The verdict comes after the reasoning.** With `supported` as the first field, Claude once committed to "false" and then argued itself back to "supported" in its explanation, so a true claim was flagged. Putting a `reasoning` field first fixed it. Structured output is generated in field order, so field order is part of the prompt.
-- **A small checker is too strict, and the loop can't settle.** With qwen checking qwen's plan, unsupported points went from 11 to 6 to 4 over 3 drafts. It made real catches ("led" a project you joined; "open-source" when the entry doesn't say so), but about half of its late flags were false alarms, and it wrote pages of working into the `problem` field. A run took about 16 minutes. The checker can now be a different model (`--checker claude`): planning stays local and checking goes to the stronger model. Checks are small calls, but they're where accuracy matters most. The problem field is cut to its first line, so working doesn't get fed back to the planner.
-- **Merging two projects is a claim too.** "I worked with the patient feedback team… and fixed bugs while supporting clinicians" cites two real entries, but from two different projects. Each fact is supported and the sentence still misleads. Claude missed this until the check prompt said so explicitly, and it's still the one claim it usually misses (3 runs in 4). It is the checker's known weak spot.
-- **Facts about the employer aren't claims about you.** "…help close the gap between your capacity and customer demand in Manchester" was flagged because no CV entry mentions Manchester. The check prompt now says that only facts about the user need support.
-- **A fixer will take the easy way out.** Asked to fix 7 points, qwen dropped all 7, which removed the closing paragraph, and the plan passed. Told to make the smallest change that makes a point true, and to drop only if nothing true remains, it fixed 7 and dropped none, and the next draft fixed 4 more. Unsupported points went 8, 4, 2, with all 15 points kept. Any paragraph emptied by drops is reported, and dropped points are listed at the end of the plan file.
-- **Ids are cleaned in code.** qwen fills a required `cv_ids` with `[""]` for "none", or writes `cv-31`. Those are normalised before checking, rather than failing as unknown entries.
-
-**On postings not used for tuning.** Every prompt fix above came from Found Health runs. Two final runs on the other postings:
-
-| Posting | Planner → checker | Unsupported per draft | Points | Result |
-|---|---|---|---|---|
-| Senior ML engineer | Claude → Claude | 2, 1, 0 | 18 kept, 0 dropped | Verified, about 35 s |
-| Data engineer | qwen → Claude | 9, 3, 1 | 13 of 14 kept, 1 dropped | 1 point unsupported, listed in the plan, about 5 min |
-
-Claude's plan is specific, and it names the gaps honestly (no CDK or CloudFormation, no formal TDD) instead of presenting them as strengths. qwen's first draft adds details your CV doesn't contain ("auditable", "federated", "SQL optimisation", "sole technical ownership"). The checker catches them and qwen fixes them, but its points are vaguer afterwards. The one point left unsupported is a correct catch: two projects merged into one tool.
-
-## Tailored CVs: `src/job_agent/cv.py`
-
-The same graph as the letter plan (extract, match, draft, check each point, fix by patching), applied to your own CV as a Word template. Three settings change, through `letter.Drafting`:
-
-| | Letter plan | CV |
-|---|---|---|
-| Sections | 4–5 paragraphs the model chooses | Profile, Key Skills, then one section per job in the template |
-| Evidence shown | The matched entries | Every entry, grouped by the job it belongs to, so every job gets bullets whatever the posting asks for |
-| Allowed citations | Any entry | **A job's bullets may cite only that job's entries.** This is checked in code, without a model call, so work can't move to the wrong employer |
-
-- **Facts are never generated.** The name, contact line, job titles and dates, education, publications and projects are left exactly as they are in the template. Only the profile, the skills lines and each job's bullets are replaced, and the template's own paragraphs are cloned, so fonts, bold category labels and bullet styles carry over.
-- **The CV stays the same length.** The prompt gives each job's current bullet count. Without it, the first run wrote 9 bullets for a job the template gives 6, making the CV about a third longer.
-- **Inputs are personal and stay in `data/`:** `cv_template.docx` (your CV), and `cv_employers.yaml`, which says which job each CV entry belongs to and how each job's header reads in the template. The employer of each entry was suggested from its text and then reviewed by hand: 17 of the 78 couldn't be told from the text alone.
-- **Output:** `data/drafts/<posting>.cv.docx`, plus `<posting>.cv_plan.md` with every bullet's citations, for checking.
-
-On the senior ML engineer posting with Claude: 22 points, unsupported 4, then 1, then 0 over 3 drafts, with nothing dropped. The checker refused to call unit testing "TDD", and stopped mentoring that one entry credits to a researcher from being credited to analysts as well.
-
-## Applying, with your approval: `src/job_agent/workflow/`
-
-`job-apply` runs everything for one posting, then **stops and waits for you** before writing anything to the tracker.
-
-```mermaid
-graph TD;
-  __start__ --> extract -.-> match --> assess;
-  assess --> letter --> review;
-  assess --> cv --> review;
-  review -.->|approve| save --> __end__;
-  review -.->|revise, with notes| letter;
-  review -.->|revise, with notes| cv;
-  review -.->|reject| __end__;
-```
-
-- **Matched once, drafted in parallel.** The letter plan and the CV share one assessment. The letter graph skips extract and match when it's given one, and the two run side by side.
-- **`interrupt()` pauses the run at `review`.** It shows the verdict counts, and for each document whether it verified, how many drafts it took and where the file is. You can approve, revise with notes (for the letter, the CV or both; only those are redrafted, checked and shown again), or reject.
-- **A SQLite checkpointer (`data/runs.db`) saves every step.** A paused run can be left: `job-apply --resume <run>` picks it up from the review in a new terminal or the next day, without drafting anything again. A run that fails part-way (a dropped model connection, say) resumes from its last completed step. The checkpointer only loads the project's own types (`Requirement`, `Turn`) besides LangGraph's, so a tampered database can't make it build arbitrary objects.
-- **The only writes come after approval.** `save` logs the application (status `interested`, linked to the posting) and saves the assessment, the letter plan and the CV plan as drafts, with the `.docx` path noted. Rejecting writes nothing.
-- **Layers:** `graph.py` (LangGraph), `service.py` (`start`, `decide`, `retry`, `view`, `runs`: the only entry point), `models.py` (Pydantic `Review`, `Decision`, `RunView`, with no LangGraph types), `cli.py`. The web interface will use the same service.
-
-## Evals: `src/job_agent/scoring.py`
-
-For each posting, I write an answer key (`data/evals/<posting>.yaml`). For each requirement it lists the CV entries that **must** be cited (`expected`) and those that are **fine** to cite (`acceptable`):
-
-```yaml
-requirements:
-  - requirement: AWS (SageMaker, S3, ...)
-    expected: [cv-018, cv-035]
-    acceptable: [cv-031]
-  - requirement: Kubernetes
-    expected: []          # a genuine gap: nothing should be cited
-```
-
-`job-score` reports these metrics:
-
-| Metric | Meaning |
-|---|---|
-| retrieved | Share of must-cite entries the agent's searches returned. This measures the **search**. |
-| cited | Share of must-cite entries cited in the final answer. This measures the **search and the model's judgement**. |
-| precision | Share of cited entries that are in `expected` or `acceptable` |
-| covered | Share of requirements with at least one valid citation |
-| made-up | Ids cited but never retrieved, which means the model invented them |
-
-The answer key is checked when it loads: unknown ids, or an id listed as both `expected` and `acceptable`, are errors rather than silent misses. That check has already caught typos like `cv-0035`.
-
-### Findings so far
-
-These come from three real postings, with 3 runs per setup, so treat them as indicative. Each posting has its own hand-written answer key.
-
-**Current baseline** (current search and prompt, tools mode):
-
-| Posting | Claude Haiku: retrieved / cited / precision | qwen3.5:9b (local): retrieved / cited / precision |
-|---|---|---|
-| Senior ML engineer (large media organisation) | 96% / 88% / 92% | 87% / 65% / 90% |
-| Data engineer (health-tech startup) | 92% / 92% / 96% | 92% / 70% / 95% |
-| Back-end software engineer (health-tech) | 81% / 74% / 94% | 80% / 51% / 87% |
-| **Average** | **90% / 85% / 94%** | **86% / 62% / 91%** |
-
-Neither model cited an id it hadn't retrieved in any of these runs (made-up: 0).
-
-With the whole CV in the prompt and no search (full-context mode), Claude cites 88% on the ML engineer posting, the same as with tools.
-
-**How the Claude tools setup got there:**
-
-| Change | retrieved | cited |
-|---|---|---|
-| Original keyword search, `limit=5` | 79% | 76% |
-| IDF weighting + phrase bonus, `limit=10` | 84% | 80% |
-| Prompt also asks for impact/outcome evidence | 96% | 88% |
-
-What these show:
-
-- **The search no longer loses anything.** With tools, Claude now cites as much must-cite evidence as when it's given the whole CV (88% both ways). It started 20 points behind.
-- **Ties hide evidence.** Nine CV entries share the tag "code review", so with `limit=5` the later ones were never returned, however good the ranking. Raising the limit fixed that; improving the ranking alone couldn't.
-- **Some evidence has to be asked for.** Entries written as stories (impact, process, leadership) rarely match skill-style queries. Asking the model to also search for impact and outcomes was the single biggest gain.
-- **The small local model's weakness is judgement, not search - on every posting.** qwen retrieves about as much must-cite evidence as Claude (86% vs 90% on average) but cites over 20 points less of it (62% vs 85%). The search fixes helped it too (52% to 65% cited on the first posting). It also sometimes attaches a real id to the wrong claim, which a recall/precision score can't catch because the id is valid for the requirement, and it once looked up past letters for the wrong company because the names overlapped ("Foundation Health" vs "Our Future Health").
-- **Answer keys need judgement too.** A few entries were missed even with the full CV. I moved them from "must cite" to "acceptable" rather than tuning the agent to match my opinion of them.
-- **The fixes mostly generalise, except for evidence written as a story.** The data engineer posting scores as well as the first one. The back-end posting is lower because it asks for behaviour (ownership, judgement, learning quickly) rather than tools. Two entries it needs, a team strategy and a self-taught build, were never retrieved in any run. That's the same blind spot the impact prompt fixed for outcomes, and it's the test case for embedding search.
-- **New answer keys need a review after the first runs.** The first runs on the new postings showed precision of 84–86%. Most of the gap was the keys, not the agent: ids the agent cited in every run that were genuinely good evidence, and "must cite" picks the model rightly treated as weak, such as role summaries. Moving those to "acceptable" took precision to 94–96%. Changes are recorded in comments in each key.
-- **The agent found real problems in the CV,** such as the same skill described as "in progress" in one place and "used in production" in another.
-
-## Setup
-
-You'll need [uv](https://docs.astral.sh/uv/) and Python 3.13 or later.
+## Quick start
 
 ```bash
-uv sync
-cp .env.example .env    # add ANTHROPIC_API_KEY, and OLLAMA_HOST if Ollama runs on another machine
+uv sync                                                    # install
+uv run job-agent --clipboard acme_ds --company "Acme" --role "Data Scientist"   # save a copied job advert
+uv run job-apply data/evals/postings/acme_ds.md            # assess, draft, then review and approve
+uv run job-web                                             # or the same over HTTP: http://127.0.0.1:8000/docs
 ```
 
-### Your data
+It needs your own CV data in `data/`, which is gitignored. [Setup](docs/setup.md) covers that, along with every command and the tests.
 
-`data/` is gitignored because it holds personal data. You need to create:
+## Documentation
 
-- **`data/cv.json`**: a list of self-contained claims in this format:
-  ```json
-  {"id": "cv-001", "category": "experience", "text": "...", "source": "...", "tags": ["..."]}
-  ```
-- **`data/letters.json`**: built from your `.docx` and `.odt` letters by `scripts/build_letters.py`, using a manifest. To set it up, copy [letters.example.yaml](letters.example.yaml) to `data/letters.yaml` and run:
-  ```bash
-  uv run python scripts/build_letters.py
-  ```
-
-- **`data/evals/postings/<name>.md`**: job postings, pasted in by hand (or saved with `--clipboard`). An optional header records where each one came from. The agent sends only the text below the header to the model.
-  ```markdown
-  ---
-  company: Acme Health
-  role: Senior Data Scientist
-  url: https://example.com/jobs/123
-  saved: '2026-10-19'
-  ---
-  (the posting text, pasted as-is)
-  ```
-
-To see the expected formats, look at [tests/fixtures/](tests/fixtures/).
-
-## Usage
-
-```bash
-# Run an MCP server on its own, e.g. for Claude Desktop or the MCP Inspector
-uv run cv-server
-npx @modelcontextprotocol/inspector uv run cv-server
-npx @modelcontextprotocol/inspector uv run tracker-server
-
-# Copy a job posting from the browser, then save it and assess it in one step
-uv run job-agent --clipboard acme_ds --company "Acme" --role "Data Scientist" --url "https://..."
-uv run job-agent --clipboard acme_ds --replace   # saved the wrong text? copy the advert again and replace it
-
-# Run the agent on a saved posting (the trace is appended to data/evals/runs/<posting>.jsonl)
-uv run job-agent data/evals/postings/example.md
-uv run job-agent data/evals/postings/example.md --provider ollama --model qwen3.5:9b
-uv run job-agent data/evals/postings/example.md --mode full-context
-
-# The same, with the LangGraph agent
-uv run job-graph data/evals/postings/example.md
-uv run job-graph data/evals/postings/example.md --provider ollama --with-tracker
-uv run job-graph data/evals/postings/example.md --graph explicit   # the hand-built StateGraph
-
-# The multi-step pipeline: extract requirements, match each in parallel, report
-uv run job-pipeline data/evals/postings/example.md
-uv run job-pipeline data/evals/postings/example.md --provider ollama --no-think   # thinking off: much faster
-
-# Plan a cover letter paragraph by paragraph, checking every cited point against its CV entries
-uv run job-letter data/evals/postings/example.md
-uv run job-letter data/evals/postings/example.md --provider ollama --no-think --checker claude   # plan locally, check with Claude
-uv run job-verify-eval   # score the checker on the labelled claims
-
-# Tailor your CV (data/cv_template.docx) to a posting, checking every bullet
-uv run job-cv data/evals/postings/example.md
-
-# Assess, plan the letter and tailor the CV, then approve before anything is saved
-uv run job-apply data/evals/postings/example.md
-uv run job-apply --list
-uv run job-apply --resume <run-id>
-
-# Score runs against the answer key
-uv run job-score example --runs
-uv run job-score example --since 2026-10-16T16:00   # only runs since a change
-
-# See which CV entries each run cited
-uv run python scripts/show_cited.py example --last 2 --text
-```
-
-To use the server from Claude Desktop, add it to `claude_desktop_config.json`:
-
-```json
-{"mcpServers": {
-  "cv-server":      {"command": "uv", "args": ["--directory", "C:\\path\\to\\agentic_job_assistant", "run", "cv-server"]},
-  "tracker-server": {"command": "uv", "args": ["--directory", "C:\\path\\to\\agentic_job_assistant", "run", "tracker-server"]}
-}}
-```
-
-If Claude Desktop was installed from the Microsoft Store, the config is at `%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Claude\` rather than `%APPDATA%\Claude\`.
-
-## Tests and CI
-
-```bash
-uv run pytest
-uv run ruff check .
-```
-
-- **Tests** run against fixture data in `tests/fixtures/`. `CV_SERVER_DATA_DIR` points the server at the fixtures, so they never touch personal data. They cover:
-  - the search rules, for both scoring and ranking;
-  - the tools and the MCP protocol, using an in-process client;
-  - the tracker's rules against a temporary SQLite database (`TRACKER_DB`);
-  - both agents (hand-written and LangGraph, with both graphs), using scripted fake models;
-  - the eval scoring.
-- **GitHub Actions** runs pytest and ruff on every push and pull request.
-- **Secret and personal-data checks** ([.pre-commit-config.yaml](.pre-commit-config.yaml)) run on every commit once installed with `uv run pre-commit install`. In CI, gitleaks also scans the whole git history. The checks block:
-  - API keys and tokens (gitleaks);
-  - private keys;
-  - large files;
-  - anything under `data/` or `.env`;
-  - local paths, private IP addresses and Anthropic keys.
-- **Dependabot** checks the Actions and uv dependencies weekly. Updates are reviewed and merged by hand, never automatically.
-
-## Layout
-
-```
-src/cv_server/server.py    MCP server: tools, resources, search
-src/cv_server/postings.py  saved job postings: header parsing, safe names, saving
-src/tracker_server/        MCP server for applications and drafts: store.py (SQLite rules), server.py (tools)
-src/job_agent/agent.py     agent loop, providers, CLI
-src/job_agent/graph_agent.py  the same agent on LangChain / LangGraph (job-graph)
-src/job_agent/state_graph.py  create_agent's graph built by hand (job-graph --graph explicit)
-src/job_agent/pipeline.py  extract -> parallel match -> report (job-pipeline)
-src/job_agent/letter.py    extract -> match -> draft <-> check, cover letter plans (job-letter)
-src/job_agent/verify_eval.py  scores the letter checker on labelled claims (job-verify-eval)
-src/job_agent/cv.py        the CV tailored to a posting, written into your Word template (job-cv)
-src/job_agent/workflow/    the apply workflow: graph, service, models, CLI (job-apply)
-src/job_agent/scoring.py   eval scoring (job-score)
-scripts/                   build_letters.py, import_applications.py (letters -> tracker), show_cited.py, try_client.py
-tests/                     pytest suite and fixtures
-```
+| Page | Covers |
+|---|---|
+| [Architecture](docs/architecture.md) | How the pieces fit, the layers, how the project grew, the file layout |
+| [MCP servers](docs/mcp-servers.md) | `cv-server` (tools, resources, search) and `tracker-server` (writes, idempotency) |
+| [Agents](docs/agents.md) | The hand-written loop, then LangGraph prebuilt and built by hand, compared on the same evals |
+| [Pipeline](docs/pipeline.md) | Extract → parallel match → report, and what it did for Claude and for qwen |
+| [Letter plans and CVs](docs/letters-and-cvs.md) | Drafting from evidence, the checker and its eval, patch-based fixes, the CV builder |
+| [Workflow and web](docs/workflow-and-web.md) | Pausing for approval (`interrupt()`, checkpointer) and the web API |
+| [Evals](docs/evals.md) | Answer keys, metrics, and what the scores showed |
+| [Setup](docs/setup.md) | Installing, your data, usage, tests and CI |
 
 ## Next steps
 
+Done:
 - [x] Measure the prompt change (impact/outcome searches, second-person writing)
-- [ ] Embedding search alongside keywords, to catch evidence phrased differently from the query
 - [x] More postings and answer keys, to check the findings generalise (three so far)
-- [x] Phase 3: rebuild the agent in LangGraph and compare it on the same evals, first with `create_agent`, then as a hand-built `StateGraph`
-- [ ] A multi-step graph: extract requirements, match each in parallel, draft, verify citations, and pause for approval before writing to the tracker
+- [x] Rebuild the agent in LangGraph and compare it on the same evals, first with `create_agent`, then as a hand-built `StateGraph`
+- [x] A multi-step graph: extract requirements and match each in parallel (`job-pipeline`)
+- [x] Cover letter plans with every point verified against its cited evidence, and a labelled eval for the checker (`job-letter`, `job-verify-eval`)
+- [x] A CV tailored to each posting, written into a Word template (`job-cv`)
+- [x] Human approval before anything is saved: `interrupt()` and a SQLite checkpointer (`job-apply`)
+- [x] A web API over the workflow: background runs, live progress, review decisions (`job-web`)
+
+Web app:
+- [ ] Structured progress events (in place of text lines) and a single settings object, before the frontend
+- [ ] React review screen: paste a job, follow progress, review the assessment, letter plan and CV, then decide
+- [ ] Postings and tracker pages
+- [ ] Tidy-ups: the draft-and-verify engine as its own module, an idempotent tracker save, and typed graph state
+
+Then:
+- [ ] Embedding search alongside keywords, to catch evidence phrased differently from the query
+- [ ] Deploy to AWS: a job queue and workers, a hosted checkpointer, S3 for files, MCP servers over HTTP, authentication, and tracing
+- [ ] Evals at scale: 30–50 postings rated by hand, with the hallucination rate per claim and cost per run
