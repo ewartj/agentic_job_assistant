@@ -13,15 +13,13 @@ from langchain_core.language_models import BaseChatModel
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
 
-from job_agent.agent import OLLAMA_NUM_CTX, ROOT
-from job_agent.cv import EMPLOYERS, TEMPLATE, Employers
+from job_agent.agent import OLLAMA_NUM_CTX
+from job_agent.cv import Employers
+from job_agent.events import ProgressEvent
 from job_agent.graph_agent import make_model, server
-from job_agent.letter import DRAFTS_DIR
+from job_agent.settings import get_settings
 from job_agent.workflow.graph import ApplySettings, build_apply_graph
 from job_agent.workflow.service import ApplyService, open_checkpointer
-
-RUNS_DB = ROOT / "data" / "runs.db"
-POSTINGS_DIR = ROOT / "data" / "evals" / "postings"
 
 
 @dataclass
@@ -36,12 +34,14 @@ class ModelChoice:
 
     @staticmethod
     def add_arguments(parser: argparse.ArgumentParser) -> None:
-        parser.add_argument("--provider", choices=["claude", "ollama"], default="claude")
-        parser.add_argument("--model", help="override the provider's default model")
-        parser.add_argument("--checker", choices=["claude", "ollama"],
+        settings = get_settings()  # JOB_PROVIDER etc. set the defaults; flags override them
+        parser.add_argument("--provider", choices=["claude", "ollama"], default=settings.provider)
+        parser.add_argument("--model", default=settings.model, help="override the provider's default model")
+        parser.add_argument("--checker", choices=["claude", "ollama"], default=settings.checker,
                             help="model provider for checking points (default: the same as --provider)")
-        parser.add_argument("--checker-model", help="override the checker provider's default model")
-        parser.add_argument("--num-ctx", type=int, default=OLLAMA_NUM_CTX, help="Ollama context window in tokens")
+        parser.add_argument("--checker-model", default=settings.checker_model,
+                            help="override the checker provider's default model")
+        parser.add_argument("--num-ctx", type=int, default=settings.num_ctx, help="Ollama context window in tokens")
         parser.add_argument("--no-think", action="store_true", help="turn off the Ollama model's thinking")
 
     @classmethod
@@ -68,9 +68,10 @@ class ModelChoice:
 
 
 @asynccontextmanager
-async def open_service(choice: ModelChoice, progress: Callable[[str], None] | None = None,
-                       runs_db: Path = RUNS_DB) -> AsyncIterator[ApplyService]:
+async def open_service(choice: ModelChoice, progress: Callable[[ProgressEvent], None] | None = None,
+                       runs_db: Path | None = None) -> AsyncIterator[ApplyService]:
     """The service with its servers and checkpointer, all closed on exit."""
+    config = get_settings()
     model, checker_model = choice.models()
     async with AsyncExitStack() as stack:
         async def connect(name: str) -> ClientSession:
@@ -79,8 +80,9 @@ async def open_service(choice: ModelChoice, progress: Callable[[str], None] | No
             await session.initialize()
             return session
 
-        settings = ApplySettings(model=model, cv=await connect("cv-server"), tracker=await connect("tracker-server"),
-                                 employers=Employers.load(EMPLOYERS), template=TEMPLATE, drafts_dir=DRAFTS_DIR,
-                                 checker_model=checker_model, max_concurrency=choice.concurrency, progress=progress)
-        checkpointer = await stack.enter_async_context(open_checkpointer(runs_db))
-        yield ApplyService(build_apply_graph(settings, checkpointer), max_concurrency=choice.concurrency)
+        apply = ApplySettings(model=model, cv=await connect("cv-server"), tracker=await connect("tracker-server"),
+                              employers=Employers.load(config.employers), template=config.template,
+                              drafts_dir=config.drafts_dir, checker_model=checker_model,
+                              max_concurrency=choice.concurrency, progress=progress)
+        checkpointer = await stack.enter_async_context(open_checkpointer(runs_db or config.runs_db))
+        yield ApplyService(build_apply_graph(apply, checkpointer), max_concurrency=choice.concurrency)

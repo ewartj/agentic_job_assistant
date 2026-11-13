@@ -1,6 +1,33 @@
 """Request and response bodies the API adds to the workflow's own models (RunView,
 Review, Decision), which it returns as they are."""
-from pydantic import BaseModel, Field
+from typing import Annotated, Literal
+
+from pydantic import BaseModel, Field, RootModel
+
+from job_agent.events import ProgressEvent
+from job_agent.workflow.models import RunStatus
+
+# --- Messages on /runs/{run_id}/events, one per "data:" line ----------------------------
+
+class ProgressMessage(BaseModel):
+    type: Literal["progress"] = "progress"
+    event: ProgressEvent
+
+
+class StatusMessage(BaseModel):
+    """Sent when a stretch of work ends: where the run now stands."""
+    type: Literal["status"] = "status"
+    status: RunStatus
+    error: str | None = None
+
+
+class EndMessage(BaseModel):
+    """The last message: the stream closes after it."""
+    type: Literal["end"] = "end"
+
+
+class StreamMessage(RootModel[Annotated[ProgressMessage | StatusMessage | EndMessage, Field(discriminator="type")]]):
+    """Any message on the events stream - documented in the API schema for the frontend's types."""
 
 
 class PostingSummary(BaseModel):

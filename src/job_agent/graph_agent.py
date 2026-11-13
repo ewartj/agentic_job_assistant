@@ -46,7 +46,6 @@ from job_agent.agent import (
     MAX_TURNS,
     OLLAMA_NUM_CTX,
     ROOT,
-    RUNS_DIR,
     SYSTEM_PROMPT,
     TASK_TEMPLATE,
     ToolRequest,
@@ -57,6 +56,7 @@ from job_agent.agent import (
     load_full_cv,
     utf8_output,
 )
+from job_agent.settings import get_settings
 from job_agent.state_graph import build_graph
 
 # --- MCP tools -> LangChain tools ---------------------------------------------
@@ -213,7 +213,9 @@ async def run_graph_agent(
 
 
 def server(name: str) -> StdioServerParameters:
-    return StdioServerParameters(command="uv", args=["run", name], cwd=str(ROOT))
+    # The server is its own process and doesn't inherit our environment, so it's told
+    # where the data is - otherwise a JOB_DATA_DIR setting would silently not reach it.
+    return StdioServerParameters(command="uv", args=["run", name], cwd=str(ROOT), env=get_settings().server_env())
 
 
 async def amain(args: argparse.Namespace) -> None:
@@ -244,8 +246,9 @@ async def amain(args: argparse.Namespace) -> None:
         trace = await run_graph_agent(model, tools, task, system, args.mode, args.max_turns,
                                       provider=provider, graph=args.graph)
 
-    RUNS_DIR.mkdir(parents=True, exist_ok=True)
-    out = RUNS_DIR / f"{args.posting.stem}.jsonl"
+    traces = get_settings().traces_dir
+    traces.mkdir(parents=True, exist_ok=True)
+    out = traces / f"{args.posting.stem}.jsonl"
     with out.open("a", encoding="utf-8") as f:
         f.write(trace.to_json() + "\n")
 

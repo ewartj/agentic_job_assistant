@@ -29,12 +29,10 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 from cv_server.postings import save_posting, split_front_matter
+from job_agent.settings import DEFAULT_NUM_CTX, ROOT, get_settings
 
-ROOT = Path(__file__).resolve().parents[2]
-RUNS_DIR = ROOT / "data" / "evals" / "runs"  # gitignored, like the rest of data/
-POSTINGS_DIR = ROOT / "data" / "evals" / "postings"
 MAX_TURNS = 8
-OLLAMA_NUM_CTX = 32768  # tokens; enough for the posting plus several rounds of search results
+OLLAMA_NUM_CTX = DEFAULT_NUM_CTX
 CV_ID = re.compile(r"\bcv-\d{3}\b")
 # Stop reasons that mean "finished normally" (Claude: end_turn, Ollama: stop).
 # Anything else without tool calls - refusal, max_tokens, length - is recorded as-is.
@@ -391,14 +389,16 @@ async def amain(args: argparse.Namespace) -> None:
     _, posting = split_front_matter(args.posting.read_text(encoding="utf-8"))
     task = TASK_TEMPLATE.format(posting=posting)
     provider = make_provider(args.provider, args.model, args.num_ctx)
-    server = StdioServerParameters(command="uv", args=["run", "cv-server"], cwd=str(ROOT))
+    server = StdioServerParameters(command="uv", args=["run", "cv-server"], cwd=str(ROOT),
+                                   env=get_settings().server_env())
 
     async with stdio_client(server) as (read, write), ClientSession(read, write) as session:
         await session.initialize()
         trace = await run_agent(session, provider, task, mode=args.mode, max_turns=args.max_turns)
 
-    RUNS_DIR.mkdir(parents=True, exist_ok=True)
-    out = RUNS_DIR / f"{args.posting.stem}.jsonl"
+    traces = get_settings().traces_dir
+    traces.mkdir(parents=True, exist_ok=True)
+    out = traces / f"{args.posting.stem}.jsonl"
     with out.open("a", encoding="utf-8") as f:
         f.write(trace.to_json() + "\n")
 
@@ -449,15 +449,15 @@ def main() -> None:
         parser.error("--replace only works with --clipboard NAME")
     if args.clipboard:
         try:
-            args.posting = save_posting(POSTINGS_DIR, args.clipboard, read_clipboard(), replace=args.replace,
-                                        company=args.company, role=args.role, url=args.url)
+            args.posting = save_posting(get_settings().postings_dir, args.clipboard, read_clipboard(),
+                                        replace=args.replace, company=args.company, role=args.role, url=args.url)
         except (ValueError, FileExistsError) as e:
             parser.error(str(e))
         # Show the start of what was saved, so a wrong clipboard (e.g. a command) is obvious.
         _, body = split_front_matter(args.posting.read_text(encoding="utf-8"))
         preview = "\n".join(f"  | {line}" for line in body.splitlines()[:3])
         print(f"saved posting to {args.posting}:\n{preview}\n")
-        runs = RUNS_DIR / f"{args.posting.stem}.jsonl"
+        runs = get_settings().traces_dir / f"{args.posting.stem}.jsonl"
         if args.replace and runs.exists():
             print(f"note: earlier runs in {runs} were made on the old text - delete it to start the scores afresh\n")
     asyncio.run(amain(args))

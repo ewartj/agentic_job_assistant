@@ -47,7 +47,6 @@ from job_agent.agent import (
     CV_ID,
     OLLAMA_NUM_CTX,
     ROOT,
-    RUNS_DIR,
     ToolRequest,
     Trace,
     Turn,
@@ -55,6 +54,7 @@ from job_agent.agent import (
     utf8_output,
 )
 from job_agent.graph_agent import make_model, model_name, server
+from job_agent.settings import get_settings
 
 # --- What the model returns (structured output) ------------------------------
 
@@ -312,8 +312,9 @@ async def amain(args: argparse.Namespace) -> None:
                                    progress=lambda line: print(line, file=sys.stderr, flush=True),
                                    max_concurrency=concurrency)
 
-    RUNS_DIR.mkdir(parents=True, exist_ok=True)
-    out = RUNS_DIR / f"{args.posting.stem}.jsonl"
+    traces = get_settings().traces_dir
+    traces.mkdir(parents=True, exist_ok=True)
+    out = traces / f"{args.posting.stem}.jsonl"
     with out.open("a", encoding="utf-8") as f:
         f.write(trace.to_json() + "\n")
 

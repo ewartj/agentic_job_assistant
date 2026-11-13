@@ -12,7 +12,7 @@ from typing import Any
 HISTORY = 1000  # events kept per run
 HEARTBEAT = 15.0  # seconds between keep-alives while a run is quiet
 
-Event = dict[str, Any]  # {"type": "progress", "line": ...} | {"type": "status", ...} | {"type": "end"}
+Event = dict[str, Any]  # a message from schemas.py (progress, status or end), as a dict
 
 
 class ProgressHub:

@@ -15,7 +15,16 @@ from fastapi.responses import FileResponse, StreamingResponse
 
 from cv_server.postings import NAME, list_postings, posting_path, save_posting, split_front_matter
 from job_agent.web.runs import RunManager
-from job_agent.web.schemas import Health, NewPosting, Posting, PostingSummary, StartRun
+from job_agent.web.schemas import (
+    EndMessage,
+    Health,
+    NewPosting,
+    Posting,
+    PostingSummary,
+    StartRun,
+    StatusMessage,
+    StreamMessage,
+)
 from job_agent.workflow.models import Decision, RunView
 
 router = APIRouter()
@@ -119,7 +128,8 @@ async def retry(run_id: str, runs: Runs) -> RunView:
     return await runs.retry(run_id)
 
 
-@router.get("/runs/{run_id}/events", response_class=StreamingResponse)
+@router.get("/runs/{run_id}/events", response_class=StreamingResponse, responses={
+    200: {"model": StreamMessage, "description": "A text/event-stream: one StreamMessage per 'data:' line"}})
 async def events(run_id: str, runs: Runs) -> StreamingResponse:
     """Server-sent events: progress lines while the run works, then its status, then end."""
     await runs.view(run_id)  # 404 for an unknown run, before the stream starts
@@ -128,8 +138,8 @@ async def events(run_id: str, runs: Runs) -> StreamingResponse:
         if not runs.is_running(run_id) and runs.hub.has_ended(run_id):
             # Nothing going on (or the server restarted): just say where the run is.
             view = await runs.view(run_id)
-            for event in ({"type": "status", "status": view.status, "error": view.error}, {"type": "end"}):
-                yield f"data: {json.dumps(event)}\n\n"
+            for message in (StatusMessage(status=view.status, error=view.error), EndMessage()):
+                yield f"data: {message.model_dump_json()}\n\n"
             return
         async for event in runs.hub.follow(run_id):
             yield ": keep-alive\n\n" if event is None else f"data: {json.dumps(event)}\n\n"

@@ -30,8 +30,7 @@ from mcp.client.stdio import stdio_client
 from job_agent.agent import OLLAMA_NUM_CTX, ROOT, utf8_output
 from job_agent.graph_agent import make_model, model_name, server
 from job_agent.letter import Check, verify
-
-CLAIMS_FILE = ROOT / "data" / "evals" / "claims.yaml"
+from job_agent.settings import get_settings
 
 
 def load_claims(path: Path) -> list[dict[str, Any]]:
@@ -99,7 +98,7 @@ def main() -> None:
     utf8_output()
     load_dotenv(ROOT / ".env")
     parser = argparse.ArgumentParser(description="Score the letter checker against hand-labelled claims.")
-    parser.add_argument("--file", type=Path, default=CLAIMS_FILE,
+    parser.add_argument("--file", type=Path, default=get_settings().claims_file,
                         help="labelled claims (default data/evals/claims.yaml)")
     parser.add_argument("--provider", choices=["claude", "ollama"], default="claude")
     parser.add_argument("--model", help="override the provider's default model")

@@ -13,6 +13,20 @@ uv sync
 cp .env.example .env    # add ANTHROPIC_API_KEY, and OLLAMA_HOST if Ollama runs on another machine
 ```
 
+### Settings
+
+Every path and default lives in one place, `src/job_agent/settings.py`. Each can be overridden with a `JOB_*` environment variable or a line in `.env`. Command-line flags override both.
+
+| Setting | Default | What it sets |
+|---|---|---|
+| `JOB_DATA_DIR` | `data/` | Where all personal data lives. Every other path (CV, template, postings, drafts, traces, the runs and tracker databases) is under it |
+| `JOB_PROVIDER`, `JOB_MODEL` | `claude`, the provider's default | The drafting model |
+| `JOB_CHECKER`, `JOB_CHECKER_MODEL` | the same as the provider | The checking model, e.g. `JOB_PROVIDER=ollama JOB_CHECKER=claude` |
+| `JOB_NUM_CTX` | `32768` | Ollama's context window |
+| `JOB_PORT` | `8000` | `job-web`'s port. It always listens on `127.0.0.1` |
+
+The MCP servers run as separate processes and don't inherit the environment, so the agent passes them the data paths explicitly. Before that, setting a data folder silently didn't reach them: they read the default `data/` regardless.
+
 ### Your data
 
 `data/` is gitignored because it holds personal data. You need to create:

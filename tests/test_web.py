@@ -16,6 +16,7 @@ from cv_server.server import mcp as cv_mcp
 from job_agent.letter import Outline
 from job_agent.pipeline import Requirements
 from job_agent.web.app import create_app
+from job_agent.web.schemas import StreamMessage
 from job_agent.workflow.graph import ApplySettings, build_apply_graph
 from job_agent.workflow.service import ApplyService, open_checkpointer
 from tracker_server.server import mcp as tracker_mcp
@@ -173,8 +174,11 @@ async def test_progress_streams_as_server_sent_events(make_api):
         async with client.stream("GET", f"/api/runs/{run_id}/events") as stream:
             events = [json.loads(line[6:]) async for line in stream.aiter_lines() if line.startswith("data: ")]
 
-    assert any(e["type"] == "progress" and e["line"].startswith("[letter]") for e in events)
-    assert any(e["type"] == "progress" and e["line"].startswith("[cv]") for e in events)
+    messages = [StreamMessage.model_validate(e).root for e in events]  # every message matches the schema
+    progress = [(m.event.step, m.event.artifact) for m in messages if m.type == "progress"]
+    assert progress[:2] == [("extracted", None), ("matched", None)]  # the shared assessment comes first
+    for artifact in ("cover_letter_plan", "cv"):
+        assert ("drafted", artifact) in progress and ("checked", artifact) in progress
     assert events[-2:] == [{"type": "status", "status": "awaiting_review", "error": None}, {"type": "end"}]
 
 

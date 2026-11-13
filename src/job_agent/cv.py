@@ -26,7 +26,6 @@ Both inputs are personal and live in data/ (gitignored):
 import argparse
 import asyncio
 import json
-import sys
 from contextlib import AsyncExitStack
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -43,9 +42,9 @@ from mcp.client.stdio import stdio_client
 
 from cv_server.postings import split_front_matter
 from job_agent.agent import OLLAMA_NUM_CTX, ROOT, utf8_output
+from job_agent.events import print_progress
 from job_agent.graph_agent import make_model, model_name, server
 from job_agent.letter import (
-    DRAFTS_DIR,
     Drafting,
     EntryText,
     LetterState,
@@ -55,10 +54,7 @@ from job_agent.letter import (
     run_letter,
 )
 from job_agent.pipeline import LABELS
-
-TEMPLATE = ROOT / "data" / "cv_template.docx"
-EMPLOYERS = ROOT / "data" / "cv_employers.yaml"
-CVS_DIR = ROOT / "data" / "evals" / "cvs"  # traces
+from job_agent.settings import get_settings
 
 PROFILE, SKILLS = "Profile", "Key Skills"
 
@@ -169,7 +165,7 @@ def read_template(path: Path, employers: Employers) -> Template:
         i += 1
     missing = set(employers.headers) - set(jobs)
     if missing:
-        raise SystemExit(f"{path.name}: no job header matches {sorted(missing)} - check 'jobs' in {EMPLOYERS.name}")
+        raise SystemExit(f"{path.name}: no job header matches {sorted(missing)} - check 'jobs' in the employers file")
     return Template(doc=doc, profile=profile, skills=skills, jobs=jobs)
 
 
@@ -300,20 +296,22 @@ async def amain(args: argparse.Namespace) -> None:
         state = await run_letter(model, cv, posting, company=meta.get("company") or "", role=meta.get("role") or "",
                                  limit=args.limit, max_concurrency=concurrency, checker_model=checker_model,
                                  drafting=cv_drafting(employers, template), examples=[template.current()],
-                                 progress=lambda line: print(line, file=sys.stderr, flush=True))
+                                 progress=print_progress)
 
     verified = is_verified(state["rounds"])
     stem = args.posting.stem
-    out, plan_path, warnings = save_cv(state, args.template, employers, DRAFTS_DIR, stem, meta.get("role"))
+    settings = get_settings()
+    settings.drafts_dir.mkdir(parents=True, exist_ok=True)
+    out, plan_path, warnings = save_cv(state, args.template, employers, settings.drafts_dir, stem, meta.get("role"))
     plan_md = plan_path.read_text(encoding="utf-8")
 
-    CVS_DIR.mkdir(parents=True, exist_ok=True)
+    settings.cv_traces_dir.mkdir(parents=True, exist_ok=True)
     record = {"started_at": datetime.now().isoformat(timespec="seconds"),
               "provider": f"cv-{args.provider}" + ("-nothink" if args.no_think else ""), "model": model_name(model),
               "checker": f"{checker}/{model_name(checker_model or model)}", "posting": stem,
               "drafts": state.get("attempt", 0), "verified": verified, "rounds": state["rounds"],
               "plan": state.get("letter", ""), "warnings": warnings}
-    with (CVS_DIR / f"{stem}.jsonl").open("a", encoding="utf-8") as f:
+    with (settings.cv_traces_dir / f"{stem}.jsonl").open("a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
 
     print(plan_md)
@@ -325,7 +323,7 @@ async def amain(args: argparse.Namespace) -> None:
         print(f"WARNING: {w}")
     if not verified:
         print("WARNING: the CV still has unsupported points (listed above and in the plan file).")
-    print(f"CV saved to {out}\nplan (with citations) saved to {DRAFTS_DIR / f'{stem}.cv_plan.md'}")
+    print(f"CV saved to {out}\nplan (with citations) saved to {plan_path}")
 
 
 def main() -> None:
@@ -333,9 +331,9 @@ def main() -> None:
     load_dotenv(ROOT / ".env")
     parser = argparse.ArgumentParser(description="Tailor your CV to a job posting, checking every bullet.")
     parser.add_argument("posting", type=Path, help="text/markdown file containing the job posting")
-    parser.add_argument("--template", type=Path, default=TEMPLATE,
+    parser.add_argument("--template", type=Path, default=get_settings().template,
                         help="your CV as a .docx (default data/cv_template.docx)")
-    parser.add_argument("--employers", type=Path, default=EMPLOYERS,
+    parser.add_argument("--employers", type=Path, default=get_settings().employers,
                         help="entry -> job mapping (default data/cv_employers.yaml)")
     parser.add_argument("--provider", choices=["claude", "ollama"], default="claude")
     parser.add_argument("--model", help="override the provider's default model")

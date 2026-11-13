@@ -7,6 +7,7 @@
 Callers see RunView, Review and Decision (models.py), never LangGraph's own types: the
 graph and how runs are stored can change without the CLI or the API changing.
 """
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
@@ -29,7 +30,7 @@ CHECKPOINT_TYPES = [("job_agent.pipeline", "Requirement"), ("job_agent.agent", "
 
 
 # The run whose graph is executing in this task. Graph nodes run in tasks created
-# inside it, which inherit it, so a progress callback can tell which run a line is for.
+# inside it, which inherit it, so a progress callback can tell which run an event is for.
 _current_run: ContextVar[str | None] = ContextVar("current_run", default=None)
 
 
@@ -78,7 +79,7 @@ class ApplyService:
         """Assess the posting and draft both documents; returns when the run pauses for review."""
         meta, text = split_front_matter(posting.read_text(encoding="utf-8"))
         run_id = run_id or self.new_run_id(posting)
-        inputs = {"run_id": run_id, "posting": text, "posting_name": posting.stem,
+        inputs = {"run_id": run_id, "started_at": time.time(), "posting": text, "posting_name": posting.stem,
                   "company": str(meta.get("company") or ""), "role": str(meta.get("role") or ""),
                   "url": str(meta.get("url") or "")}
         await self._run(run_id, inputs)
