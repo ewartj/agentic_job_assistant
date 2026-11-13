@@ -78,6 +78,8 @@ src/job_agent/cv.py           the CV tailored to a posting, written into your Wo
 src/job_agent/verify_eval.py  scores the checker on labelled claims (job-verify-eval)
 src/job_agent/workflow/       the apply workflow: graph, service, models, runtime, CLI (job-apply)
 src/job_agent/web/            the web API: routes, background runs, live progress (job-web)
+src/job_agent/events.py       progress as typed events, and how the terminal shows them
+src/job_agent/settings.py     every path and default in one place (JOB_* environment variables)
 src/job_agent/scoring.py      eval scoring (job-score)
 scripts/                      build_letters.py, import_applications.py, show_cited.py, try_client.py
 tests/                        pytest suite and fixtures

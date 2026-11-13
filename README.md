@@ -72,12 +72,13 @@ Done:
 - [x] A CV tailored to each posting, written into a Word template (`job-cv`)
 - [x] Human approval before anything is saved: `interrupt()` and a SQLite checkpointer (`job-apply`)
 - [x] A web API over the workflow: background runs, live progress, review decisions (`job-web`)
+- [x] Structured progress events and a single settings object, ready for the frontend
 
 Web app:
-- [ ] Structured progress events (in place of text lines) and a single settings object, before the frontend
+- [ ] Restructure the package: assessment, drafting (engine, checker, letter, CV), workflow, web, evals and thin CLIs, with the step 2–4 experiments kept apart and nothing in the product importing them
 - [ ] React review screen: paste a job, follow progress, review the assessment, letter plan and CV, then decide
 - [ ] Postings and tracker pages
-- [ ] Tidy-ups: the draft-and-verify engine as its own module, an idempotent tracker save, and typed graph state
+- [ ] Tidy-ups: an idempotent tracker save, and typed graph state
 
 Then:
 - [ ] Embedding search alongside keywords, to catch evidence phrased differently from the query

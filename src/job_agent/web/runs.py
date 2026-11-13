@@ -12,6 +12,7 @@ from pathlib import Path
 
 from cv_server.postings import posting_path
 from job_agent.web.progress import ProgressHub
+from job_agent.web.schemas import EndMessage, StatusMessage
 from job_agent.workflow.models import Decision, RunView
 from job_agent.workflow.service import ApplyService, NotAwaitingReview, NotStopped, RunNotFound
 
@@ -82,10 +83,10 @@ class RunManager:
     async def _announce_end(self, run_id: str) -> None:
         try:
             view = await self.view(run_id)
-            self.hub.publish(run_id, {"type": "status", "status": view.status, "error": view.error})
+            self.hub.publish(run_id, StatusMessage(status=view.status, error=view.error).model_dump())
         except RunNotFound:  # failed before its first step was saved
-            self.hub.publish(run_id, {"type": "status", "status": "stopped", "error": self._errors.get(run_id)})
-        self.hub.publish(run_id, {"type": "end"})
+            self.hub.publish(run_id, StatusMessage(status="stopped", error=self._errors.get(run_id)).model_dump())
+        self.hub.publish(run_id, EndMessage().model_dump())
 
     def is_running(self, run_id: str) -> bool:
         return run_id in self._tasks

@@ -12,17 +12,18 @@ from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from job_agent.letter import DRAFTS_DIR
+from job_agent.events import ProgressEvent
+from job_agent.settings import get_settings
 from job_agent.web.progress import ProgressHub
 from job_agent.web.routes import router
 from job_agent.web.runs import PostingNotFound, RunConflict, RunManager
-from job_agent.workflow.runtime import POSTINGS_DIR
+from job_agent.web.schemas import ProgressMessage
 from job_agent.workflow.service import ApplyService, NotAwaitingReview, NotStopped, RunNotFound, current_run
 
 # The React dev server (stage 3). Nothing else may call the API from a browser.
 DEV_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
-OpenService = Callable[[Callable[[str], None]], AbstractAsyncContextManager[ApplyService]]
+OpenService = Callable[[Callable[[ProgressEvent], None]], AbstractAsyncContextManager[ApplyService]]
 
 ERRORS: dict[type[Exception], int] = {
     RunNotFound: status.HTTP_404_NOT_FOUND,
@@ -34,19 +35,21 @@ ERRORS: dict[type[Exception], int] = {
 }
 
 
-def create_app(open_service: OpenService, postings_dir: Path = POSTINGS_DIR, drafts_dir: Path = DRAFTS_DIR,
+def create_app(open_service: OpenService, postings_dir: Path | None = None, drafts_dir: Path | None = None,
                allowed_origins: list[str] = DEV_ORIGINS) -> FastAPI:
     hub = ProgressHub()
 
-    def progress(line: str) -> None:
-        # Called from inside a run's graph: current_run() says which run the line is for.
-        hub.publish(current_run(), {"type": "progress", "line": line})
+    def progress(event: ProgressEvent) -> None:
+        # Called from inside a run's graph: current_run() says which run the event is for.
+        hub.publish(current_run(), ProgressMessage(event=event).model_dump())
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         async with open_service(progress) as service:
-            app.state.manager = RunManager(service, hub, postings_dir)
-            app.state.postings_dir, app.state.drafts_dir = postings_dir, drafts_dir
+            settings = get_settings()
+            postings, drafts = postings_dir or settings.postings_dir, drafts_dir or settings.drafts_dir
+            app.state.manager = RunManager(service, hub, postings)
+            app.state.postings_dir, app.state.drafts_dir = postings, drafts
             try:
                 yield
             finally:

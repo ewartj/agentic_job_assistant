@@ -31,7 +31,6 @@ import asyncio
 import json
 import operator
 import re
-import sys
 import time
 from collections.abc import Awaitable, Callable
 from contextlib import AsyncExitStack
@@ -52,13 +51,13 @@ from pydantic import BaseModel, Field
 from cv_server.postings import split_front_matter
 from job_agent import pipeline
 from job_agent.agent import CV_ID, OLLAMA_NUM_CTX, ROOT, Turn, utf8_output
+from job_agent.events import Checked, Drafted, Extracted, Matched, ProgressEvent, Started, print_progress
 from job_agent.graph_agent import make_model, model_name, server
 from job_agent.pipeline import LABELS, PipelineState, assessment_nodes, usage
+from job_agent.settings import get_settings
 
 MAX_DRAFTS = 3  # the first draft plus up to two redrafts
 EXAMPLES = 2  # past letters shown for tone and structure
-LETTERS_DIR = ROOT / "data" / "evals" / "letters"  # traces, for evaluating the verifier
-DRAFTS_DIR = ROOT / "data" / "drafts"  # the letters themselves
 
 PLAN_PROMPT = """\
 You plan cover letters for the user. Write a plan the user will write the letter \
@@ -549,18 +548,19 @@ async def interview_letters(cv: ClientSession, tracker: ClientSession | None, n:
 
 async def run_letter(model: BaseChatModel, cv: ClientSession, posting: str, *, tracker: ClientSession | None = None,
                      company: str = "", role: str = "", limit: int = 10, max_concurrency: int | None = None,
-                     progress=None, checker_model: BaseChatModel | None = None,
+                     progress: Callable[[ProgressEvent], None] | None = None,
+                     checker_model: BaseChatModel | None = None,
                      drafting: Drafting | None = None, examples: list[str] | None = None,
                      assessment: dict[str, Any] | None = None, notes: str = "", previous: str = "") -> dict[str, Any]:
     """Run the graph; returns the final state plus `rounds`, a per-draft summary of the checks.
 
     assessment: requirements, matches and extract_turn from a run already done, to
     reuse instead of extracting and matching again. notes and previous: a revision.
+    progress: called with an event as each step finishes (events.py).
     """
-    say = progress or (lambda line: None)
+    report = progress or (lambda event: None)
     started = time.perf_counter()
-    say(f"[   0s] drafting from the shared assessment with {model_name(model)}..." if assessment else
-        f"[   0s] finding example letters, then extracting requirements with {model_name(model)}...")
+    report(Started(model=model_name(model), shared_assessment=assessment is not None))
     state: dict[str, Any] = {}
     inputs = {"posting": posting, "company": company, "role": role, **(assessment or {})}
     if examples is not None:
@@ -573,23 +573,10 @@ async def run_letter(model: BaseChatModel, cv: ClientSession, posting: str, *, t
         if mode == "values":
             state = chunk
             continue
-        elapsed = time.perf_counter() - started
+        elapsed = round(time.perf_counter() - started, 1)
         for node, update in chunk.items():
-            update = update or {}
-            if node == "extract":
-                say(f"[{elapsed:4.0f}s] extracted {len(update.get('requirements', []))} requirements")
-            elif node == "match":
-                (m,) = update["matches"]
-                say(f"[{elapsed:4.0f}s]   {m['requirement'].name}: {m['verdict']}")
-            elif node == "draft" and update["attempt"] == 1:
-                say(f"[{elapsed:4.0f}s] plan written; checking its {len(update['to_check'])} points...")
-            elif node == "draft":
-                say(f"[{elapsed:4.0f}s] draft {update['attempt']}: {len(update['to_check'])} points fixed, "
-                    f"{len(update.get('dropped', []))} dropped; rechecking the fixed ones...")
-            elif node == "check":
-                (c,) = update["checks"]
-                if c["supported"] is False:
-                    say(f"[{elapsed:4.0f}s]   unsupported: \"{c['sentence'][:70]}...\" {c['cv_ids']}: {c['problem']}")
+            if event := progress_event(node, update or {}, elapsed):
+                report(event)
     state["rounds"] = [
         {"attempt": a, "claims": len(cs), "cited": sum(bool(c["cv_ids"]) for c in cs),
          "rechecked": sum(not c.get("carried") for c in cs),
@@ -601,6 +588,24 @@ async def run_letter(model: BaseChatModel, cv: ClientSession, posting: str, *, t
         for cs in [[c for c in state.get("checks", []) if c["attempt"] == a]]
     ]
     return state
+
+
+def progress_event(node: str, update: dict[str, Any], elapsed: float) -> ProgressEvent | None:
+    """The event for a node that just finished, from what it added to the state."""
+    if node == "extract":
+        return Extracted(requirements=len(update.get("requirements", [])), elapsed=elapsed)
+    if node == "match":
+        (m,) = update["matches"]
+        return Matched(requirement=m["requirement"].name, kind=m["requirement"].kind, verdict=m["verdict"],
+                       elapsed=elapsed)
+    if node == "draft":
+        return Drafted(attempt=update["attempt"], to_check=len(update["to_check"]),
+                       dropped=len(update.get("dropped", [])), elapsed=elapsed)
+    if node == "check":
+        (c,) = update["checks"]
+        return Checked(attempt=c["attempt"], point=c["sentence"], cv_ids=c["cv_ids"], supported=c["supported"],
+                       problem=c["problem"], elapsed=elapsed)
+    return None
 
 
 def is_verified(rounds: list[dict[str, Any]]) -> bool:
@@ -669,7 +674,7 @@ async def amain(args: argparse.Namespace) -> None:
         state = await run_letter(model, cv, posting, tracker=tracker, company=args.company or meta.get("company") or "",
                                  role=args.role or meta.get("role") or "", limit=args.limit,
                                  max_concurrency=concurrency,
-                                 progress=lambda line: print(line, file=sys.stderr, flush=True),
+                                 progress=print_progress,
                                  checker_model=checker_model)
 
     final = state["rounds"][-1] if state["rounds"] else {"failed": [], "unchecked": [], "claims": 0, "cited": 0}
@@ -680,17 +685,18 @@ async def amain(args: argparse.Namespace) -> None:
     turns = [state["extract_turn"], *(m["turn"] for m in state.get("matches", [])), *state.get("turns", [])]
 
     stem, now = args.posting.stem, datetime.now().isoformat(timespec="seconds")
-    DRAFTS_DIR.mkdir(parents=True, exist_ok=True)
-    out = DRAFTS_DIR / f"{stem}.cover_letter_plan.md"
+    settings = get_settings()
+    settings.drafts_dir.mkdir(parents=True, exist_ok=True)
+    out = settings.drafts_dir / f"{stem}.cover_letter_plan.md"
     out.write_text(plan, encoding="utf-8")
-    LETTERS_DIR.mkdir(parents=True, exist_ok=True)
+    settings.letter_traces_dir.mkdir(parents=True, exist_ok=True)
     record = {"started_at": now, "provider": f"letter-{args.provider}" + ("-nothink" if args.no_think else ""),
               "model": model_name(model), "checker": f"{checker}/{model_name(checker_model or model)}",
               "posting": stem, "examples": len(state.get("examples", [])),
               "drafts": state.get("attempt", 0), "verified": verified, "rounds": state["rounds"],
               "letter": state.get("letter", ""),
               "input_tokens": sum(t.input_tokens for t in turns), "output_tokens": sum(t.output_tokens for t in turns)}
-    with (LETTERS_DIR / f"{stem}.jsonl").open("a", encoding="utf-8") as f:
+    with (settings.letter_traces_dir / f"{stem}.jsonl").open("a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
 
     print(plan)

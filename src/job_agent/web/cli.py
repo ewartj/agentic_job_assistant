@@ -12,6 +12,7 @@ import uvicorn
 from dotenv import load_dotenv
 
 from job_agent.agent import ROOT, utf8_output
+from job_agent.settings import get_settings
 from job_agent.web.app import create_app
 from job_agent.workflow.runtime import ModelChoice, open_service
 
@@ -22,7 +23,7 @@ def main() -> None:
     utf8_output()
     load_dotenv(ROOT / ".env")
     parser = argparse.ArgumentParser(description="Serve the job assistant's API on this machine only.")
-    parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--port", type=int, default=get_settings().port)
     ModelChoice.add_arguments(parser)
     args = parser.parse_args()
     choice = ModelChoice.from_args(parser, args)

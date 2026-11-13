@@ -16,6 +16,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from job_agent.agent import ROOT, utf8_output
+from job_agent.events import print_progress
 from job_agent.workflow.models import Decision, RunView
 from job_agent.workflow.runtime import ModelChoice, open_service
 from job_agent.workflow.service import ApplyService
@@ -78,7 +79,7 @@ async def review_loop(service: ApplyService, view: RunView) -> None:
 
 
 async def amain(args: argparse.Namespace, choice: ModelChoice) -> None:
-    async with open_service(choice, progress=lambda line: print(line, file=sys.stderr, flush=True)) as service:
+    async with open_service(choice, progress=print_progress) as service:
         if args.list:
             for view in await service.runs():
                 print(f"{view.run_id:45} {view.status}")

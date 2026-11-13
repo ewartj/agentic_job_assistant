@@ -28,9 +28,7 @@ from typing import Any
 
 import yaml
 
-ROOT = Path(__file__).resolve().parents[2]
-EVALS_DIR = ROOT / "data" / "evals"
-CV_FILE = ROOT / "data" / "cv.json"
+from job_agent.settings import get_settings
 
 
 @dataclass
@@ -171,13 +169,14 @@ def main() -> None:
     parser.add_argument("--since", metavar="TIME", help="only runs started at or after this, e.g. 2026-10-16T15:50")
     args = parser.parse_args()
 
-    case_file = EVALS_DIR / f"{args.posting}.yaml"
-    runs_file = EVALS_DIR / "runs" / f"{args.posting}.jsonl"
+    settings = get_settings()
+    case_file = settings.evals_dir / f"{args.posting}.yaml"
+    runs_file = settings.traces_dir / f"{args.posting}.jsonl"
     for f in (case_file, runs_file):
         if not f.exists():
             raise SystemExit(f"Not found: {f}")
 
-    known_ids = {e["id"] for e in json.loads(CV_FILE.read_text(encoding="utf-8"))}
+    known_ids = {e["id"] for e in json.loads(settings.cv_file.read_text(encoding="utf-8"))}
     requirements = load_case(case_file, known_ids)
     runs = [json.loads(line) for line in runs_file.read_text(encoding="utf-8").splitlines() if line.strip()]
     runs = since(runs, args.since)

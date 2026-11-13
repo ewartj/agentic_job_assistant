@@ -18,6 +18,7 @@ New compared with letter.py:
     checkpointer  every step is saved to SQLite, so a paused (or failed) run carries on
                   from where it was rather than starting again
 """
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,11 +26,12 @@ from typing import Any
 
 from langchain_core.language_models import BaseChatModel
 from langgraph.graph import END, START, StateGraph
-from langgraph.types import interrupt
+from langgraph.types import Send, interrupt
 from mcp import ClientSession
 
 from job_agent import pipeline
 from job_agent.cv import Employers, cv_drafting, read_template, save_cv
+from job_agent.events import Extracted, Matched, ProgressEvent
 from job_agent.letter import is_verified, letter_title, plan_document, run_letter
 from job_agent.pipeline import PipelineState, assessment_nodes, render
 from job_agent.workflow.models import Artifact, ArtifactKind, Decision, Review
@@ -39,6 +41,7 @@ KEY: dict[ArtifactKind, str] = {"cover_letter_plan": "letter", "cv": "cv"}  # ar
 
 class ApplyState(PipelineState, total=False):
     run_id: str
+    started_at: float  # time.time() when the run started, for progress timings
     posting_name: str  # the saved posting's file name, without .md
     company: str
     role: str
@@ -63,7 +66,7 @@ class ApplySettings:
     checker_model: BaseChatModel | None = None
     limit: int = 10
     max_concurrency: int | None = None
-    progress: Callable[[str], None] | None = None
+    progress: Callable[[ProgressEvent], None] | None = None
 
 
 def artifact(kind: ArtifactKind, result: dict[str, Any], plan: str, plan_path: Path,
@@ -85,8 +88,36 @@ def build_apply_graph(s: ApplySettings, checkpointer: Any = None):
     extract, fan_out, match = assessment_nodes(s.model, s.cv, s.limit, if_none="assess")
     s.drafts_dir.mkdir(parents=True, exist_ok=True)
 
-    def say(label: str) -> Callable[[str], None] | None:
-        return (lambda line: s.progress(f"[{label}] {line}")) if s.progress else None
+    def report(event: ProgressEvent) -> None:
+        if s.progress:
+            s.progress(event)
+
+    def about(kind: ArtifactKind) -> Callable[[ProgressEvent], None]:
+        """Progress from the letter or CV loop, labelled with which one it is."""
+        return lambda event: report(event.model_copy(update={"artifact": kind}))
+
+    def since(started_at: float | None) -> float:
+        return round(time.time() - started_at, 1) if started_at else 0.0
+
+    # The shared assessment's own steps, reported like the letter's and CV's.
+    async def extract_reported(state: ApplyState) -> dict[str, Any]:
+        update = await extract(state)
+        report(Extracted(requirements=len(update["requirements"]), elapsed=since(state.get("started_at"))))
+        return update
+
+    def fan_out_timed(state: ApplyState) -> list[Send] | str:
+        # Each match branch only gets its Send payload, so the run's start time rides along.
+        sends = fan_out(state)
+        if isinstance(sends, str):
+            return sends
+        return [Send(send.node, {**send.arg, "started_at": state.get("started_at")}) for send in sends]
+
+    async def match_reported(branch: dict[str, Any]) -> dict[str, Any]:
+        update = await match(branch)
+        (m,) = update["matches"]
+        report(Matched(requirement=m["requirement"].name, kind=m["requirement"].kind, verdict=m["verdict"],
+                       elapsed=since(branch.get("started_at"))))
+        return update
 
     def shared_assessment(state: ApplyState) -> dict[str, Any]:
         return {k: state[k] for k in ("requirements", "matches", "extract_turn") if k in state}
@@ -106,7 +137,7 @@ def build_apply_graph(s: ApplySettings, checkpointer: Any = None):
         result = await run_letter(s.model, s.cv, state["posting"], tracker=s.tracker, company=state["company"],
                                   role=state["role"], limit=s.limit, max_concurrency=s.max_concurrency,
                                   checker_model=s.checker_model, assessment=shared_assessment(state),
-                                  notes=notes, previous=previous, progress=say("letter"))
+                                  notes=notes, previous=previous, progress=about("cover_letter_plan"))
         plan = plan_document(result, letter_title(state["company"], state["role"]))
         path = s.drafts_dir / f"{state['posting_name']}.cover_letter_plan.md"
         path.write_text(plan, encoding="utf-8")
@@ -118,7 +149,7 @@ def build_apply_graph(s: ApplySettings, checkpointer: Any = None):
                                   limit=s.limit, max_concurrency=s.max_concurrency, checker_model=s.checker_model,
                                   drafting=cv_drafting(s.employers, template), examples=[template.current()],
                                   assessment=shared_assessment(state), notes=notes, previous=previous,
-                                  progress=say("cv"))
+                                  progress=about("cv"))
         docx_path, plan_path, warnings = save_cv(result, s.template, s.employers, s.drafts_dir,
                                                  state["posting_name"], state["role"])
         plan = plan_path.read_text(encoding="utf-8")
@@ -154,15 +185,15 @@ def build_apply_graph(s: ApplySettings, checkpointer: Any = None):
         return {"application_id": application["id"]}
 
     graph = StateGraph(ApplyState)
-    graph.add_node("extract", extract, retry_policy=pipeline.RETRY)
-    graph.add_node("match", match, retry_policy=pipeline.RETRY)
+    graph.add_node("extract", extract_reported, retry_policy=pipeline.RETRY)
+    graph.add_node("match", match_reported, retry_policy=pipeline.RETRY)
     graph.add_node("assess", assess)
     graph.add_node("letter", letter, retry_policy=pipeline.RETRY)
     graph.add_node("cv", cv, retry_policy=pipeline.RETRY)
     graph.add_node("review", review)
     graph.add_node("save", save)
     graph.add_edge(START, "extract")
-    graph.add_conditional_edges("extract", fan_out, ["match", "assess"])
+    graph.add_conditional_edges("extract", fan_out_timed, ["match", "assess"])
     graph.add_edge("match", "assess")
     graph.add_edge("assess", "letter")  # two edges out: the letter and the CV run in parallel
     graph.add_edge("assess", "cv")
