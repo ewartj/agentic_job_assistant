@@ -24,26 +24,30 @@ dependencies = [
 [project.scripts]
 cv-server = "cv_server:main"
 tracker-server = "tracker_server:main"
-job-agent = "job_agent:main"
-job-score = "job_agent.scoring:main"
-job-graph = "job_agent.graph_agent:main"
-job-pipeline = "job_agent.pipeline:main"
-job-letter = "job_agent.letter:main"
-job-verify-eval = "job_agent.verify_eval:main"
-job-cv = "job_agent.cv:main"
-job-apply = "job_agent.workflow.cli:main"
-job-web = "job_agent.web.cli:main"
+tracker-import = "tracker_server.importer:main"
+job-agent = "job_assistant.experiments.agent:main"
+job-score = "job_assistant.cli.score:main"
+job-graph = "job_assistant.experiments.graph_agent:main"
+job-pipeline = "job_assistant.cli.pipeline:main"
+job-letter = "job_assistant.cli.letter:main"
+job-verify-eval = "job_assistant.cli.checker_eval:main"
+job-cv = "job_assistant.cli.cv:main"
+job-apply = "job_assistant.cli.apply:main"
+job-web = "job_assistant.cli.web:main"
+job-posting = "job_assistant.cli.postings:main"
 
 [build-system]
 requires = ["uv_build>=0.12.19,<0.14.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
-# Packages under src/: two MCP servers and the agent that uses them.
-module-name = ["cv_server", "tracker_server", "job_agent"]
+# Packages under src/: two MCP servers, the application that uses them, and the posting
+# file format they share. None imports another's internals (see [tool.importlinter]).
+module-name = ["cv_server", "tracker_server", "job_postings", "job_assistant"]
 
 [dependency-groups]
 dev = [
+    "import-linter>=2.16",
     "pre-commit>=4.7.0",
     "pytest>=9.1.1",
     "ruff>=0.16.10",
@@ -56,3 +60,55 @@ line-length = 120
 # E/W pycodestyle, F pyflakes, I import sorting, B bugbear (likely bugs),
 # UP pyupgrade (modern syntax), SIM simplifications.
 select = ["E", "W", "F", "I", "B", "UP", "SIM"]
+
+# Import rules, checked by `uv run lint-imports` (and in CI). Each package keeps to its
+# own concerns: a contract fails the build if an import would break that.
+[tool.importlinter]
+root_packages = ["cv_server", "tracker_server", "job_postings", "job_assistant"]
+
+[[tool.importlinter.contracts]]
+name = "The MCP servers and the application are independent"
+type = "independence"
+modules = ["cv_server", "tracker_server", "job_assistant"]
+
+[[tool.importlinter.contracts]]
+name = "The posting format depends on nothing of ours"
+type = "forbidden"
+source_modules = ["job_postings"]
+forbidden_modules = ["cv_server", "tracker_server", "job_assistant"]
+
+# Each layer may import the layers below it, never above. Modules joined by | are
+# side by side and may not import each other.
+[[tool.importlinter.contracts]]
+name = "job_assistant is layered"
+type = "layers"
+containers = ["job_assistant"]
+layers = [
+    "cli",
+    "web",
+    "workflow | evals",
+    "drafting",
+    "assessment",
+    "llm | mcp | events | traces | console",
+    "config",
+]
+
+[[tool.importlinter.contracts]]
+name = "Nothing in the product imports the experiments"
+type = "forbidden"
+source_modules = [
+    "job_assistant.cli", "job_assistant.web", "job_assistant.workflow", "job_assistant.evals",
+    "job_assistant.drafting", "job_assistant.assessment",
+    "job_assistant.llm", "job_assistant.mcp", "job_assistant.events", "job_assistant.traces",
+    "job_assistant.console", "job_assistant.config",
+]
+forbidden_modules = ["job_assistant.experiments"]
+
+[[tool.importlinter.contracts]]
+name = "The experiments use only the core, not the product"
+type = "forbidden"
+source_modules = ["job_assistant.experiments"]
+forbidden_modules = [
+    "job_assistant.cli", "job_assistant.web", "job_assistant.workflow", "job_assistant.evals",
+    "job_assistant.drafting", "job_assistant.assessment",
+]

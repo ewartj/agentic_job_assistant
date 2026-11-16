@@ -41,7 +41,7 @@ Splitting the work helped the small model most: it only has to judge, not plan. 
 
 ```bash
 uv sync                                                    # install
-uv run job-agent --clipboard acme_ds --company "Acme" --role "Data Scientist"   # save a copied job advert
+uv run job-posting acme_ds --company "Acme" --role "Data Scientist"   # save a copied job advert
 uv run job-apply data/evals/postings/acme_ds.md            # assess, draft, then review and approve
 uv run job-web                                             # or the same over HTTP: http://127.0.0.1:8000/docs
 ```
@@ -73,9 +73,10 @@ Done:
 - [x] Human approval before anything is saved: `interrupt()` and a SQLite checkpointer (`job-apply`)
 - [x] A web API over the workflow: background runs, live progress, review decisions (`job-web`)
 - [x] Structured progress events and a single settings object, ready for the frontend
+- [x] Restructure the package: assessment, drafting (engine, checker, letter, CV), workflow, web, evals and thin CLIs, with the step 2–4 experiments kept apart and nothing in the product importing them
+- [x] Decouple the packages: the app reaches the servers only over MCP, the posting file format becomes a small shared package, and `import-linter` in CI enforces the boundaries
 
 Web app:
-- [ ] Restructure the package: assessment, drafting (engine, checker, letter, CV), workflow, web, evals and thin CLIs, with the step 2–4 experiments kept apart and nothing in the product importing them
 - [ ] React review screen: paste a job, follow progress, review the assessment, letter plan and CV, then decide
 - [ ] Postings and tracker pages
 - [ ] Tidy-ups: an idempotent tracker save, and typed graph state

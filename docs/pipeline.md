@@ -4,7 +4,7 @@
 
 Splitting the assessment into steps (extract the requirements, match each one in parallel, report) and what that did for Claude and for a small local model.
 
-## The pipeline: `src/job_agent/pipeline.py`
+## The pipeline: `src/job_assistant/assessment/pipeline.py`
 
 The same assessment as a multi-step graph. The agent no longer chooses its searches in one big turn: each step has one job.
 

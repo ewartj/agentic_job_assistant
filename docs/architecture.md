@@ -24,15 +24,29 @@ How the pieces fit together now, how the project grew to this, and where each pi
 
 ## Layers
 
-Each layer only talks to the one below it, so each can be tested and replaced on its own.
+There are four packages under `src/`. Each one imports only its own modules and the ones below it, so each can be tested and replaced on its own:
+
+| Package | What it is | May import |
+|---|---|---|
+| `cv_server` | MCP server: the CV, past letters and postings (read only) | `job_postings` |
+| `tracker_server` | MCP server: applications and drafts (the only writes), and `tracker-import` | nothing of ours |
+| `job_postings` | The posting file format: header, safe names, saving | nothing of ours |
+| `job_assistant` | The application: talks to the servers over MCP only | `job_postings` |
+
+Inside `job_assistant`, each layer may import the layers below it, never above:
 
 | Layer | Code | Knows about |
 |---|---|---|
-| Interfaces | `web/` (FastAPI), `workflow/cli.py` (`job-apply`) | HTTP or the terminal; the service and its Pydantic models |
-| Service | `workflow/service.py` | Starting, deciding, retrying and listing runs. Never HTTP, never HTML |
-| Graphs | `workflow/graph.py`, `letter.py`, `cv.py`, `pipeline.py` | LangGraph: nodes, state, `Send`, `interrupt()` |
-| Tools and data | `cv_server/`, `tracker_server/` (MCP servers) | The CV and letters (read only), and the tracker (the only writes) |
-| Models | LangChain `ChatAnthropic` / `ChatOllama` | One interface for both providers |
+| Commands | `cli/` (`job-apply`, `job-web`, `job-letter`, ...) | Arguments and printing. Nothing else in the package does either |
+| Web API | `web/` (FastAPI) | HTTP; the service and its Pydantic models |
+| Service and evals | `workflow/` (the apply graph, `ApplyService`), `evals/` | Starting, deciding, retrying and listing runs. Never HTTP, never HTML |
+| Drafting | `drafting/` (the engine, the checker, the letter and CV configurations, the Word writer) | The draft → check → fix loop, for any document |
+| Assessment | `assessment/` (extract → parallel match → report) | Which requirements a posting has, and the evidence for each |
+| Core | `llm`, `mcp`, `events`, `traces`, `console`, then `config` | Models, MCP calls, progress events, run records, the terminal, settings |
+
+`experiments/` holds the learning steps (the hand-written agent loop and the LangGraph agents). They use only the core, and nothing imports them.
+
+These rules are contracts in `pyproject.toml` (`[tool.importlinter]`). `uv run lint-imports` checks them, and so does CI: an import that breaks a rule fails the build.
 
 - **A run's state lives in one place:** the checkpointer (`data/runs.db`). The terminal and the web share runs, and a restart loses nothing.
 - **The model can read, but only you can write.** The model's tools are read-only. The one write (saving to the tracker) happens after you approve, which limits what a prompt-injected posting could do.
@@ -66,22 +80,20 @@ job posting ──► job-agent ──(MCP over stdio)──► cv-server ──
 ## Layout
 
 ```
-src/cv_server/server.py       MCP server: tools, resources, search
-src/cv_server/postings.py     saved job postings: header parsing, safe names, saving
-src/tracker_server/           MCP server for applications and drafts: store.py (SQLite rules), server.py (tools)
-src/job_agent/agent.py        hand-written agent loop, providers, CLI (job-agent)
-src/job_agent/graph_agent.py  the same agent on LangChain / LangGraph (job-graph)
-src/job_agent/state_graph.py  create_agent's graph built by hand (job-graph --graph explicit)
-src/job_agent/pipeline.py     extract -> parallel match -> report (job-pipeline)
-src/job_agent/letter.py       draft <-> check loop; cover letter plans (job-letter)
-src/job_agent/cv.py           the CV tailored to a posting, written into your Word template (job-cv)
-src/job_agent/verify_eval.py  scores the checker on labelled claims (job-verify-eval)
-src/job_agent/workflow/       the apply workflow: graph, service, models, runtime, CLI (job-apply)
-src/job_agent/web/            the web API: routes, background runs, live progress (job-web)
-src/job_agent/events.py       progress as typed events, and how the terminal shows them
-src/job_agent/settings.py     every path and default in one place (JOB_* environment variables)
-src/job_agent/scoring.py      eval scoring (job-score)
-scripts/                      build_letters.py, import_applications.py, show_cited.py, try_client.py
-tests/                        pytest suite and fixtures
-docs/                         these pages
+src/cv_server/                  MCP server: tools, resources, search
+src/tracker_server/             MCP server for applications and drafts: store.py (SQLite rules), server.py (tools),
+                                importer.py (tracker-import)
+src/job_postings/               the posting file format, shared by cv_server and job_assistant
+src/job_assistant/
+  cli/                          every command: apply, web, postings, pipeline, letter, cv, score, checker_eval
+  web/                          the web API: routes, background runs, live progress
+  workflow/                     the apply workflow: graph, service, models, runtime
+  evals/                        scoring runs against answer keys, and the checker against labelled claims
+  drafting/                     engine.py (draft <-> check <-> fix), checker.py, letter.py, cv.py, docx.py
+  assessment/                   pipeline.py: extract -> parallel match -> report
+  llm.py, mcp.py, events.py, traces.py, console.py, config.py    the core
+  experiments/                  agent.py (job-agent), graph_agent.py and state_graph.py (job-graph)
+scripts/                        build_letters.py, show_cited.py, try_client.py
+tests/                          one folder per package, plus the shared fixtures
+docs/                           these pages
 ```

@@ -1,0 +1,88 @@
+"""Opening the apply service for real: models, the two MCP servers and the checkpointer.
+
+Shared by job-apply and job-web, so both choose models the same way and start the
+service the same way. Tests build ApplyService directly with fakes instead.
+"""
+import argparse
+from collections.abc import AsyncIterator, Callable
+from contextlib import AsyncExitStack, asynccontextmanager
+from dataclasses import dataclass
+from pathlib import Path
+
+from langchain_core.language_models import BaseChatModel
+from mcp import ClientSession
+from mcp.client.stdio import stdio_client
+
+from job_assistant.config import DEFAULT_NUM_CTX, get_settings
+from job_assistant.drafting.cv import Employers
+from job_assistant.events import ProgressEvent
+from job_assistant.llm import make_model
+from job_assistant.mcp import server
+from job_assistant.workflow.graph import ApplySettings, build_apply_graph
+from job_assistant.workflow.service import ApplyService, open_checkpointer
+
+
+@dataclass
+class ModelChoice:
+    """Which models draft and which check, as chosen on the command line."""
+    provider: str = "claude"
+    model: str | None = None
+    checker: str | None = None  # None: the same as provider
+    checker_model: str | None = None
+    num_ctx: int = DEFAULT_NUM_CTX
+    no_think: bool = False
+
+    @staticmethod
+    def add_arguments(parser: argparse.ArgumentParser) -> None:
+        settings = get_settings()  # JOB_PROVIDER etc. set the defaults; flags override them
+        parser.add_argument("--provider", choices=["claude", "ollama"], default=settings.provider)
+        parser.add_argument("--model", default=settings.model, help="override the provider's default model")
+        parser.add_argument("--checker", choices=["claude", "ollama"], default=settings.checker,
+                            help="model provider for checking points (default: the same as --provider)")
+        parser.add_argument("--checker-model", default=settings.checker_model,
+                            help="override the checker provider's default model")
+        parser.add_argument("--num-ctx", type=int, default=settings.num_ctx, help="Ollama context window in tokens")
+        parser.add_argument("--no-think", action="store_true", help="turn off the Ollama model's thinking")
+
+    @classmethod
+    def from_args(cls, parser: argparse.ArgumentParser, args: argparse.Namespace) -> "ModelChoice":
+        choice = cls(args.provider, args.model, args.checker, args.checker_model, args.num_ctx, args.no_think)
+        if choice.no_think and "ollama" not in (choice.provider, choice.checker):
+            parser.error("--no-think only applies when --provider or --checker is ollama")
+        return choice
+
+    @property
+    def concurrency(self) -> int | None:
+        """Ollama on one machine answers one request at a time, so the work takes turns."""
+        return 1 if "ollama" in (self.provider, self.checker or self.provider) else None
+
+    def models(self) -> tuple[BaseChatModel, BaseChatModel | None]:
+        """(drafting model, checker model or None to check with the drafting one)."""
+        def make(provider: str, name: str | None) -> BaseChatModel:
+            think = False if self.no_think and provider == "ollama" else None
+            return make_model(provider, name, self.num_ctx, think=think)
+
+        checker = self.checker or self.provider
+        separate = (checker, self.checker_model) != (self.provider, None)
+        return make(self.provider, self.model), make(checker, self.checker_model) if separate else None
+
+
+@asynccontextmanager
+async def open_service(choice: ModelChoice, progress: Callable[[ProgressEvent], None] | None = None,
+                       runs_db: Path | None = None) -> AsyncIterator[ApplyService]:
+    """The service with its servers and checkpointer, all closed on exit."""
+    config = get_settings()
+    model, checker_model = choice.models()
+    async with AsyncExitStack() as stack:
+        async def connect(name: str) -> ClientSession:
+            read, write = await stack.enter_async_context(stdio_client(server(name)))
+            session = await stack.enter_async_context(ClientSession(read, write))
+            await session.initialize()
+            return session
+
+        apply = ApplySettings(model=model, cv=await connect("cv-server"), tracker=await connect("tracker-server"),
+                              employers=Employers.load(config.employers), template=config.template,
+                              drafts_dir=config.drafts_dir, checker_model=checker_model,
+                              max_concurrency=choice.concurrency, progress=progress)
+        checkpointer = await stack.enter_async_context(open_checkpointer(runs_db or config.runs_db))
+        yield ApplyService(build_apply_graph(apply, checkpointer), max_concurrency=choice.concurrency)

@@ -4,7 +4,7 @@
 
 How runs are scored against hand-written answer keys, and what the scores showed.
 
-## Evals: `src/job_agent/scoring.py`
+## Evals: `src/job_assistant/evals/scoring.py`
 
 For each posting, I write an answer key (`data/evals/<posting>.yaml`). For each requirement it lists the CV entries that **must** be cited (`expected`) and those that are **fine** to cite (`acceptable`):
 
