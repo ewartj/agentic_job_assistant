@@ -4,7 +4,7 @@
 
 Drafting from the matched evidence, checking every point against the entries it cites, and fixing what fails without losing what passed.
 
-## Cover letter plans: `src/job_agent/letter.py`
+## Cover letter plans: `src/job_assistant/drafting/`
 
 The pipeline's matches feed a planner, and every cited point in the plan is checked against the entries it cites before the plan is accepted. The output is a plan to write the letter from, not the letter. For each paragraph, it gives a sentence on what the paragraph should be about and why, then suggested points, each with its citations:
 
@@ -71,7 +71,7 @@ The claims include points from a real qwen plan that qwen's own checker flagged,
 
 Claude's plan is specific, and it names the gaps honestly (no CDK or CloudFormation, no formal TDD) instead of presenting them as strengths. qwen's first draft adds details your CV doesn't contain ("auditable", "federated", "SQL optimisation", "sole technical ownership"). The checker catches them and qwen fixes them, but its points are vaguer afterwards. The one point left unsupported is a correct catch: two projects merged into one tool.
 
-## Tailored CVs: `src/job_agent/cv.py`
+## Tailored CVs: `src/job_assistant/drafting/cv.py`
 
 The same graph as the letter plan (extract, match, draft, check each point, fix by patching), applied to your own CV as a Word template. Three settings change, through `letter.Drafting`:
 

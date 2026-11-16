@@ -16,7 +16,7 @@ from typing import Any
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ResourceNotFoundError
 
-from cv_server.postings import list_postings, posting_path, split_front_matter
+from job_postings import list_postings, posting_path, split_front_matter
 
 # data/ is gitignored (personal data); tests point this at tests/fixtures instead.
 DATA_DIR = Path(os.environ.get("CV_SERVER_DATA_DIR", Path(__file__).resolve().parents[2] / "data"))

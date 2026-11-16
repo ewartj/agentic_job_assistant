@@ -15,7 +15,7 @@ cp .env.example .env    # add ANTHROPIC_API_KEY, and OLLAMA_HOST if Ollama runs 
 
 ### Settings
 
-Every path and default lives in one place, `src/job_agent/settings.py`. Each can be overridden with a `JOB_*` environment variable or a line in `.env`. Command-line flags override both.
+Every path and default lives in one place, `src/job_assistant/config.py`. Each can be overridden with a `JOB_*` environment variable or a line in `.env`. Command-line flags override both.
 
 | Setting | Default | What it sets |
 |---|---|---|
@@ -40,7 +40,7 @@ The MCP servers run as separate processes and don't inherit the environment, so 
   uv run python scripts/build_letters.py
   ```
 
-- **`data/evals/postings/<name>.md`**: job postings, pasted in by hand (or saved with `--clipboard`). An optional header records where each one came from. The agent sends only the text below the header to the model.
+- **`data/evals/postings/<name>.md`**: job postings, pasted in by hand (or saved from the clipboard with `job-posting`). An optional header records where each one came from. The agent sends only the text below the header to the model.
   ```markdown
   ---
   company: Acme Health
@@ -62,8 +62,8 @@ npx @modelcontextprotocol/inspector uv run cv-server
 npx @modelcontextprotocol/inspector uv run tracker-server
 
 # Copy a job posting from the browser, then save it and assess it in one step
-uv run job-agent --clipboard acme_ds --company "Acme" --role "Data Scientist" --url "https://..."
-uv run job-agent --clipboard acme_ds --replace   # saved the wrong text? copy the advert again and replace it
+uv run job-posting acme_ds --company "Acme" --role "Data Scientist" --url "https://..."
+uv run job-posting acme_ds --replace   # saved the wrong text? copy the advert again and replace it
 
 # Run the agent on a saved posting (the trace is appended to data/evals/runs/<posting>.jsonl)
 uv run job-agent data/evals/postings/example.md
@@ -121,7 +121,7 @@ uv run pytest
 uv run ruff check .
 ```
 
-- **Tests** run against fixture data in `tests/fixtures/`. `CV_SERVER_DATA_DIR` points the server at the fixtures, so they never touch personal data. They cover:
+- **Tests** run against fixture data in `tests/fixtures/`, in one folder per package. `CV_SERVER_DATA_DIR` points the server at the fixtures, so they never touch personal data. They cover:
   - the search rules, for both scoring and ranking;
   - the tools and the MCP protocol, using an in-process client;
   - the tracker's rules against a temporary SQLite database (`TRACKER_DB`);

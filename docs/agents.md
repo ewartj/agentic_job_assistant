@@ -4,7 +4,7 @@
 
 The same agent three ways (a hand-written loop, LangGraph's prebuilt agent, and a hand-built `StateGraph`), compared on the same evals.
 
-## The agent: `src/job_agent/agent.py`
+## The agent: `src/job_assistant/experiments/agent.py`
 
 The loop is about 20 lines long:
 1. The model receives the posting and the tool definitions.
@@ -19,7 +19,7 @@ Every run is saved as a JSON trace: the turns, the tool calls, the ids retrieved
   - `full-context`: the whole CV is placed in the prompt and no tools are given. This is the baseline that shows how much the search loses.
 - **Ollama gotcha:** Ollama's default context window is small, and it silently drops the oldest messages when the conversation is too long. That included the job posting itself. The agent sets `num_ctx` to 32k tokens and warns if a prompt fills the window.
 
-## The LangGraph agent: `src/job_agent/graph_agent.py`
+## The LangGraph agent: `src/job_assistant/experiments/graph_agent.py`
 
 The same agent rebuilt on LangChain and LangGraph, with the same prompt, MCP servers and trace format, so `job-score` scores both and the comparison is like for like. Its runs are recorded as `langgraph-claude` / `langgraph-ollama`.
 
@@ -33,7 +33,7 @@ The same agent rebuilt on LangChain and LangGraph, with the same prompt, MCP ser
 - **MCP tools come through a small adapter of our own.** The usual package, `langchain-mcp-adapters`, requires `mcp<2.0`, and this project uses mcp 2.x. `mcp_tools()` wraps each MCP tool as a LangChain `StructuredTool` with the tool's own JSON schema. The CV ids it returns ride along as the `ToolMessage`'s `artifact`, so the trace records what was retrieved without the model seeing anything extra.
 - **`--with-tracker`** also offers `tracker-server`'s tools, filtered to those annotated `read_only_hint`, so an assessment can look up past applications but never write to the tracker.
 
-### The same graph, built by hand: `src/job_agent/state_graph.py`
+### The same graph, built by hand: `src/job_assistant/experiments/state_graph.py`
 
 `--graph explicit` replaces `create_agent` with a `StateGraph` written out in full. It uses the same node names, the same request to the model and the same trace, so the tests run against both graphs and must agree. Its runs are recorded as `stategraph-claude` / `stategraph-ollama`.
 

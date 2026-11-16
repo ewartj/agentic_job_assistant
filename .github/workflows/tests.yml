@@ -44,6 +44,9 @@ jobs:
       # github format annotates the offending lines in the PR diff.
       - name: Lint
         run: uv run ruff check --output-format=github .
+      # Which package may import which: contracts in pyproject.toml [tool.importlinter].
+      - name: Import contracts
+        run: uv run lint-imports
 
   # Secrets and personal data: the same hooks as the local pre-commit check
   # (.pre-commit-config.yaml), plus a gitleaks scan of the whole history.
