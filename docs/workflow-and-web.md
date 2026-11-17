@@ -27,7 +27,7 @@ graph TD;
 
 ## The web API: `src/job_assistant/web/`
 
-`uv run job-web` serves the apply workflow over HTTP on `http://127.0.0.1:8000`, with interactive docs at `/docs`. It's the backend for the React app (next).
+`uv run job-web` serves the apply workflow over HTTP on `http://127.0.0.1:8000`, with interactive docs at `/docs`. It's the backend for the React app (below).
 
 | Endpoint | What it does |
 |---|---|
@@ -39,9 +39,33 @@ graph TD;
 | `POST /api/runs/{id}/retry` | Carry on a run that stopped part-way, from its last saved step |
 | `GET /api/runs/{id}/files/{kind}` | Download the letter plan, the CV plan or the `.docx` |
 
-- **The routes hold no workflow logic.** They validate, call the run manager (which calls `ApplyService`), and return the workflow's own Pydantic models. The OpenAPI schema therefore describes exactly what the frontend gets, and its TypeScript types will be generated from it.
+- **The routes hold no workflow logic.** They validate, call the run manager (which calls `ApplyService`), and return the workflow's own Pydantic models. The OpenAPI schema therefore describes exactly what the frontend gets, and the frontend's TypeScript types are generated from it.
 - **Runs never block a request.** Each run is a background task. Its state is always read from the checkpointer, so runs started from `job-apply` show up too, and a restart loses nothing. A run that fails part-way is reported as `stopped` with the reason, and `retry` carries on from its last completed step.
 - **Progress is typed events, not text** (`src/job_assistant/events.py`): `started`, `extracted`, `matched` (each requirement and its verdict), `drafted` and `checked` (each point, passed or not, and why), each labelled with its document. The terminal turns them into the familiar lines. The web sends them as `StreamMessage`s (`progress`, `status`, `end`), which are in the API schema, so the frontend gets types for them like everything else.
 - **Progress goes to the right run.** Each run's graph is tagged with its id (a context variable), so an event is delivered only to pages following that run, with the backlog first for a page opened part-way through.
 - **Clear errors:** 404 for an unknown run or posting; 409 for a decision on a run that isn't paused, or a second run of a posting already in progress; 422 for an invalid name or decision.
 - **Local and locked down.** It listens on `127.0.0.1` only, and there's deliberately no option to change that, since there's no login yet. CORS allows only the React dev server. Downloads are chosen by kind and built from the run's own posting name, never from a path in the request, and nothing in `data/` is served directly.
+
+## The review screen: `frontend/`
+
+A React app (Vite, TypeScript) over the web API. Run both, then open http://127.0.0.1:5173:
+
+```bash
+uv run job-web                      # the API, on 127.0.0.1:8000
+cd frontend && npm install          # once
+npm run dev                         # the page, on 127.0.0.1:5173
+```
+
+- **Paste a job:** company, role, link and the advert. It's saved as a posting (the same file `job-posting` writes), and a run starts on it. Saved jobs can be run again from the list.
+- **Follow the run:** the shared assessment fills in requirement by requirement, then the letter plan and the CV side by side, each with its draft number, how many points passed their check, and every unsupported point with the reason.
+- **Review:** the verdict counts, then tabs for the assessment, the letter plan and the CV. Each plan says whether every point is supported, and has the Markdown and `.docx` downloads.
+- **Decide:** approve (saved to the tracker), revise with notes (the letter, the CV or both are redrafted, checked and shown again), or reject (it asks first). A run that stopped part-way has a Retry button.
+
+How it's built:
+
+- **Types come from the API itself.** `uv run job-openapi` writes the API's schema to `frontend/openapi.json`, and `npm run gen:api` turns it into `src/api/schema.d.ts`. A route or model that changes on the server then fails the type check, not the page. CI checks both steps are current, so they can't drift.
+- **The API stays the source of truth.** The page keeps no copy of a run's state: it follows the events while a run works, and fetches the run again whenever a stretch of work ends.
+- **One origin.** In development Vite passes `/api` on to `job-web`, so the browser talks to one origin and server-sent events need no cross-origin set-up.
+- **Safe rendering.** Plans and assessments are Markdown, rendered without raw HTML, so text from a job advert can't inject anything into the page.
+- **Small, plain parts:** `src/api/` (the typed client and the event stream), `src/run/` (progress built up from events, as pure functions, and the `useRun` hook), and `src/components/`. Pages live in the URL hash (`#/runs/<id>`), so a reload keeps your place without a router library.
+- **Tested** with Vitest and Testing Library: the progress logic, error messages, posting names and routes, the decision form (revise needs notes, reject asks first) and the paste form.

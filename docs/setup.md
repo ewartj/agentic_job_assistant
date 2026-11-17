@@ -6,7 +6,7 @@ Installing, adding your own data, the commands, and how the project is tested.
 
 ## Setup
 
-You'll need [uv](https://docs.astral.sh/uv/) and Python 3.13 or later.
+You'll need [uv](https://docs.astral.sh/uv/) and Python 3.13 or later, and [Node.js](https://nodejs.org/) 24 or later for the review screen.
 
 ```bash
 uv sync
@@ -119,6 +119,8 @@ If Claude Desktop was installed from the Microsoft Store, the config is at `%LOC
 ```bash
 uv run pytest
 uv run ruff check .
+uv run lint-imports
+cd frontend && npm run check && npm test
 ```
 
 - **Tests** run against fixture data in `tests/fixtures/`, in one folder per package. `CV_SERVER_DATA_DIR` points the server at the fixtures, so they never touch personal data. They cover:
@@ -126,12 +128,14 @@ uv run ruff check .
   - the tools and the MCP protocol, using an in-process client;
   - the tracker's rules against a temporary SQLite database (`TRACKER_DB`);
   - both agents (hand-written and LangGraph, with both graphs), using scripted fake models;
-  - the eval scoring.
-- **GitHub Actions** runs pytest and ruff on every push and pull request.
+  - the eval scoring;
+  - the web API end to end, and that `frontend/openapi.json` matches it;
+  - the review screen (Vitest): progress, errors, routes and both forms.
+- **GitHub Actions** runs on every push and pull request: pytest; ruff and the import contracts; and for the frontend, its generated types, type check, tests and build.
 - **Secret and personal-data checks** ([.pre-commit-config.yaml](../.pre-commit-config.yaml)) run on every commit once installed with `uv run pre-commit install`. In CI, gitleaks also scans the whole git history. The checks block:
   - API keys and tokens (gitleaks);
   - private keys;
   - large files;
   - anything under `data/` or `.env`;
   - local paths, private IP addresses and Anthropic keys.
-- **Dependabot** checks the Actions and uv dependencies weekly. Updates are reviewed and merged by hand, never automatically.
+- **Dependabot** checks the Actions, uv and npm dependencies weekly. Updates are reviewed and merged by hand, never automatically.

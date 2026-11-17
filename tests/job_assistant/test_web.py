@@ -13,6 +13,7 @@ from mcp import Client
 
 from cv_server.server import mcp as cv_mcp
 from job_assistant.assessment.pipeline import Requirements
+from job_assistant.cli.openapi import SCHEMA, schema_text
 from job_assistant.drafting.engine import Outline
 from job_assistant.web.app import create_app
 from job_assistant.web.schemas import StreamMessage
@@ -212,3 +213,9 @@ async def test_files_are_only_the_runs_own_by_kind(make_api):
         assert (await client.get(f"/api/runs/{run_id}/files/secrets")).status_code == 422  # not a kind
         assert (await client.get(f"/api/runs/{run_id}/files/..%2F..%2F.env")).status_code in (404, 422)
         assert (await client.get("/api/runs/no-such-run/files/cv")).status_code == 404
+
+
+def test_the_frontends_api_schema_is_up_to_date():
+    """frontend/openapi.json is what the TypeScript types come from: after changing the
+    API, run `uv run job-openapi`, then `npm run gen:api` in frontend/."""
+    assert SCHEMA.read_text(encoding="utf-8") == schema_text(), "run: uv run job-openapi"

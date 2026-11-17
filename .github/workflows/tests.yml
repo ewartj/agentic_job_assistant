@@ -48,6 +48,33 @@ jobs:
       - name: Import contracts
         run: uv run lint-imports
 
+  # The React app: types (generated from the API's schema, which the pytest job checks is
+  # up to date), its tests, and a production build.
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      # ci installs exactly what package-lock.json says, and fails if it's out of date.
+      - name: Install dependencies
+        run: npm ci
+      - name: Types from the API schema are current
+        run: npm run gen:api && git diff --exit-code src/api/schema.d.ts
+      - name: Type check
+        run: npm run check
+      - name: Tests
+        run: npm test
+      - name: Build
+        run: npm run build
+
   # Secrets and personal data: the same hooks as the local pre-commit check
   # (.pre-commit-config.yaml), plus a gitleaks scan of the whole history.
   secrets:

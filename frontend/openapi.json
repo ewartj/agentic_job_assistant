@@ -1,0 +1,1274 @@
+{
+  "components": {
+    "schemas": {
+      "Artifact": {
+        "description": "One output under review: the letter plan or the CV.",
+        "properties": {
+          "document_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The .docx, for the CV",
+            "title": "Document Path"
+          },
+          "drafts": {
+            "title": "Drafts",
+            "type": "integer"
+          },
+          "dropped": {
+            "title": "Dropped",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "cover_letter_plan",
+              "cv"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "plan": {
+            "description": "The plan as Markdown, with each point's citations",
+            "title": "Plan",
+            "type": "string"
+          },
+          "plan_path": {
+            "title": "Plan Path",
+            "type": "string"
+          },
+          "points": {
+            "title": "Points",
+            "type": "integer"
+          },
+          "unsupported": {
+            "title": "Unsupported",
+            "type": "integer"
+          },
+          "verified": {
+            "description": "Every point was checked and none is unsupported",
+            "title": "Verified",
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kind",
+          "verified",
+          "points",
+          "unsupported",
+          "dropped",
+          "drafts",
+          "plan",
+          "plan_path"
+        ],
+        "title": "Artifact",
+        "type": "object"
+      },
+      "Checked": {
+        "properties": {
+          "artifact": {
+            "anyOf": [
+              {
+                "enum": [
+                  "cover_letter_plan",
+                  "cv"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Which document this is about; none for the shared assessment",
+            "title": "Artifact"
+          },
+          "attempt": {
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "cv_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Cv Ids",
+            "type": "array"
+          },
+          "elapsed": {
+            "default": 0.0,
+            "description": "Seconds since this piece of work started",
+            "title": "Elapsed",
+            "type": "number"
+          },
+          "point": {
+            "title": "Point",
+            "type": "string"
+          },
+          "problem": {
+            "default": "",
+            "title": "Problem",
+            "type": "string"
+          },
+          "step": {
+            "const": "checked",
+            "default": "checked",
+            "title": "Step",
+            "type": "string"
+          },
+          "supported": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "None when the check itself couldn't be completed",
+            "title": "Supported"
+          }
+        },
+        "required": [
+          "attempt",
+          "point",
+          "cv_ids",
+          "supported"
+        ],
+        "title": "Checked",
+        "type": "object"
+      },
+      "Decision": {
+        "properties": {
+          "action": {
+            "enum": [
+              "approve",
+              "revise",
+              "reject"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "notes": {
+            "default": "",
+            "description": "What to change - required to revise",
+            "title": "Notes",
+            "type": "string"
+          },
+          "target": {
+            "default": "both",
+            "enum": [
+              "both",
+              "cover_letter_plan",
+              "cv"
+            ],
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "Decision",
+        "type": "object"
+      },
+      "Drafted": {
+        "properties": {
+          "artifact": {
+            "anyOf": [
+              {
+                "enum": [
+                  "cover_letter_plan",
+                  "cv"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Which document this is about; none for the shared assessment",
+            "title": "Artifact"
+          },
+          "attempt": {
+            "description": "1 for the first draft, then each redraft",
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "dropped": {
+            "default": 0,
+            "title": "Dropped",
+            "type": "integer"
+          },
+          "elapsed": {
+            "default": 0.0,
+            "description": "Seconds since this piece of work started",
+            "title": "Elapsed",
+            "type": "number"
+          },
+          "step": {
+            "const": "drafted",
+            "default": "drafted",
+            "title": "Step",
+            "type": "string"
+          },
+          "to_check": {
+            "description": "Points that are new or changed, so will be checked",
+            "title": "To Check",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "attempt",
+          "to_check"
+        ],
+        "title": "Drafted",
+        "type": "object"
+      },
+      "EndMessage": {
+        "description": "The last message: the stream closes after it.",
+        "properties": {
+          "type": {
+            "const": "end",
+            "default": "end",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "title": "EndMessage",
+        "type": "object"
+      },
+      "Extracted": {
+        "properties": {
+          "artifact": {
+            "anyOf": [
+              {
+                "enum": [
+                  "cover_letter_plan",
+                  "cv"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Which document this is about; none for the shared assessment",
+            "title": "Artifact"
+          },
+          "elapsed": {
+            "default": 0.0,
+            "description": "Seconds since this piece of work started",
+            "title": "Elapsed",
+            "type": "number"
+          },
+          "requirements": {
+            "title": "Requirements",
+            "type": "integer"
+          },
+          "step": {
+            "const": "extracted",
+            "default": "extracted",
+            "title": "Step",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requirements"
+        ],
+        "title": "Extracted",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "Health": {
+        "properties": {
+          "status": {
+            "default": "ok",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "title": "Health",
+        "type": "object"
+      },
+      "Matched": {
+        "properties": {
+          "artifact": {
+            "anyOf": [
+              {
+                "enum": [
+                  "cover_letter_plan",
+                  "cv"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Which document this is about; none for the shared assessment",
+            "title": "Artifact"
+          },
+          "elapsed": {
+            "default": 0.0,
+            "description": "Seconds since this piece of work started",
+            "title": "Elapsed",
+            "type": "number"
+          },
+          "kind": {
+            "description": "essential or desired",
+            "title": "Kind",
+            "type": "string"
+          },
+          "requirement": {
+            "title": "Requirement",
+            "type": "string"
+          },
+          "step": {
+            "const": "matched",
+            "default": "matched",
+            "title": "Step",
+            "type": "string"
+          },
+          "verdict": {
+            "description": "met, partly, gap, or error",
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requirement",
+          "kind",
+          "verdict"
+        ],
+        "title": "Matched",
+        "type": "object"
+      },
+      "NewPosting": {
+        "properties": {
+          "company": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company"
+          },
+          "name": {
+            "description": "Letters, digits, '_' and '-', starting with a letter or digit, e.g. acme_data_eng",
+            "title": "Name",
+            "type": "string"
+          },
+          "replace": {
+            "default": false,
+            "description": "Overwrite a saved posting with this name",
+            "title": "Replace",
+            "type": "boolean"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "text": {
+            "description": "The advert, pasted",
+            "title": "Text",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "name",
+          "text"
+        ],
+        "title": "NewPosting",
+        "type": "object"
+      },
+      "Posting": {
+        "properties": {
+          "company": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "saved": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Saved"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "name",
+          "text"
+        ],
+        "title": "Posting",
+        "type": "object"
+      },
+      "PostingSummary": {
+        "properties": {
+          "company": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "saved": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Saved"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "PostingSummary",
+        "type": "object"
+      },
+      "ProgressMessage": {
+        "properties": {
+          "event": {
+            "discriminator": {
+              "mapping": {
+                "checked": "#/components/schemas/Checked",
+                "drafted": "#/components/schemas/Drafted",
+                "extracted": "#/components/schemas/Extracted",
+                "matched": "#/components/schemas/Matched",
+                "started": "#/components/schemas/Started"
+              },
+              "propertyName": "step"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Started"
+              },
+              {
+                "$ref": "#/components/schemas/Extracted"
+              },
+              {
+                "$ref": "#/components/schemas/Matched"
+              },
+              {
+                "$ref": "#/components/schemas/Drafted"
+              },
+              {
+                "$ref": "#/components/schemas/Checked"
+              }
+            ],
+            "title": "Event"
+          },
+          "type": {
+            "const": "progress",
+            "default": "progress",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event"
+        ],
+        "title": "ProgressMessage",
+        "type": "object"
+      },
+      "Review": {
+        "description": "What a run shows when it pauses for your decision.",
+        "properties": {
+          "artifacts": {
+            "items": {
+              "$ref": "#/components/schemas/Artifact"
+            },
+            "title": "Artifacts",
+            "type": "array"
+          },
+          "assessment": {
+            "description": "Requirement-by-requirement verdicts, as Markdown",
+            "title": "Assessment",
+            "type": "string"
+          },
+          "company": {
+            "title": "Company",
+            "type": "string"
+          },
+          "posting": {
+            "title": "Posting",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "round": {
+            "description": "1 for the first review, then 1 more after each revision",
+            "title": "Round",
+            "type": "integer"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "verdicts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "How many requirements are met, partly met, not met",
+            "title": "Verdicts",
+            "type": "object"
+          }
+        },
+        "required": [
+          "run_id",
+          "posting",
+          "company",
+          "role",
+          "assessment",
+          "verdicts",
+          "artifacts",
+          "round"
+        ],
+        "title": "Review",
+        "type": "object"
+      },
+      "RunView": {
+        "description": "A run as anyone outside the workflow sees it.",
+        "properties": {
+          "application_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Application Id"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why a stopped run stopped, when it's known",
+            "title": "Error"
+          },
+          "posting": {
+            "title": "Posting",
+            "type": "string"
+          },
+          "review": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Review"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "running",
+              "awaiting_review",
+              "stopped",
+              "saved",
+              "rejected"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "posting",
+          "status"
+        ],
+        "title": "RunView",
+        "type": "object"
+      },
+      "StartRun": {
+        "properties": {
+          "posting": {
+            "description": "A saved posting's name",
+            "title": "Posting",
+            "type": "string"
+          }
+        },
+        "required": [
+          "posting"
+        ],
+        "title": "StartRun",
+        "type": "object"
+      },
+      "Started": {
+        "properties": {
+          "artifact": {
+            "anyOf": [
+              {
+                "enum": [
+                  "cover_letter_plan",
+                  "cv"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Which document this is about; none for the shared assessment",
+            "title": "Artifact"
+          },
+          "elapsed": {
+            "default": 0.0,
+            "description": "Seconds since this piece of work started",
+            "title": "Elapsed",
+            "type": "number"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "shared_assessment": {
+            "description": "Drafting from an assessment already done, rather than a fresh one",
+            "title": "Shared Assessment",
+            "type": "boolean"
+          },
+          "step": {
+            "const": "started",
+            "default": "started",
+            "title": "Step",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model",
+          "shared_assessment"
+        ],
+        "title": "Started",
+        "type": "object"
+      },
+      "StatusMessage": {
+        "description": "Sent when a stretch of work ends: where the run now stands.",
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "status": {
+            "enum": [
+              "running",
+              "awaiting_review",
+              "stopped",
+              "saved",
+              "rejected"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "type": {
+            "const": "status",
+            "default": "status",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "StatusMessage",
+        "type": "object"
+      },
+      "StreamMessage": {
+        "description": "Any message on the events stream - documented in the API schema for the frontend's types.",
+        "discriminator": {
+          "mapping": {
+            "end": "#/components/schemas/EndMessage",
+            "progress": "#/components/schemas/ProgressMessage",
+            "status": "#/components/schemas/StatusMessage"
+          },
+          "propertyName": "type"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ProgressMessage"
+          },
+          {
+            "$ref": "#/components/schemas/StatusMessage"
+          },
+          {
+            "$ref": "#/components/schemas/EndMessage"
+          }
+        ],
+        "title": "StreamMessage"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "summary": "Assess a posting, plan the letter and CV, approve, save.",
+    "title": "Job assistant",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/health": {
+      "get": {
+        "operationId": "health_api_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health"
+      }
+    },
+    "/api/postings": {
+      "get": {
+        "operationId": "get_postings_api_postings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PostingSummary"
+                  },
+                  "title": "Response Get Postings Api Postings Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Postings"
+      },
+      "post": {
+        "operationId": "add_posting_api_postings_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewPosting"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Posting"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Posting"
+      }
+    },
+    "/api/postings/{name}": {
+      "get": {
+        "operationId": "get_posting_api_postings__name__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Posting"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Posting"
+      }
+    },
+    "/api/runs": {
+      "get": {
+        "operationId": "get_runs_api_runs_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RunView"
+                  },
+                  "title": "Response Get Runs Api Runs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Runs"
+      },
+      "post": {
+        "description": "Starts the run in the background; follow it at /runs/{run_id}/events.",
+        "operationId": "start_run_api_runs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartRun"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Run"
+      }
+    },
+    "/api/runs/{run_id}": {
+      "get": {
+        "operationId": "get_run_api_runs__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Run"
+      }
+    },
+    "/api/runs/{run_id}/decision": {
+      "post": {
+        "description": "Approve (save to the tracker), revise with notes, or reject a run waiting for review.",
+        "operationId": "decide_api_runs__run_id__decision_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Decision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Decide"
+      }
+    },
+    "/api/runs/{run_id}/events": {
+      "get": {
+        "description": "Server-sent events: progress lines while the run works, then its status, then end.",
+        "operationId": "events_api_runs__run_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StreamMessage"
+                }
+              }
+            },
+            "description": "A text/event-stream: one StreamMessage per 'data:' line"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Events"
+      }
+    },
+    "/api/runs/{run_id}/files/{kind}": {
+      "get": {
+        "operationId": "download_api_runs__run_id__files__kind__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "enum": [
+                "cover_letter_plan",
+                "cv_plan",
+                "cv"
+              ],
+              "title": "Kind",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download"
+      }
+    },
+    "/api/runs/{run_id}/retry": {
+      "post": {
+        "description": "Carry on a run that stopped part-way, from its last saved step.",
+        "operationId": "retry_api_runs__run_id__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry"
+      }
+    }
+  }
+}
