@@ -7,6 +7,7 @@ fake models and in-process servers, while job-web passes the real one (runtime.p
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -64,6 +65,16 @@ def create_app(open_service: OpenService, postings_dir: Path | None = None, draf
     for error, code in ERRORS.items():
         app.add_exception_handler(error, _handler(code))
     return app
+
+
+def openapi_schema() -> dict[str, Any]:
+    """The API's OpenAPI schema, without starting the app: the frontend's TypeScript
+    types are generated from it (job-openapi writes it to frontend/openapi.json)."""
+
+    def no_service(progress: Callable[[ProgressEvent], None]) -> AbstractAsyncContextManager[ApplyService]:
+        raise RuntimeError("only the schema is wanted: the app isn't started")
+
+    return create_app(no_service).openapi()
 
 
 def _handler(code: int) -> Callable[[Request, Exception], JSONResponse]:

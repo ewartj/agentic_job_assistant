@@ -35,6 +35,7 @@ job-cv = "job_assistant.cli.cv:main"
 job-apply = "job_assistant.cli.apply:main"
 job-web = "job_assistant.cli.web:main"
 job-posting = "job_assistant.cli.postings:main"
+job-openapi = "job_assistant.cli.openapi:main"
 
 [build-system]
 requires = ["uv_build>=0.12.19,<0.14.0"]

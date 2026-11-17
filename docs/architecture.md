@@ -7,7 +7,7 @@ How the pieces fit together now, how the project grew to this, and where each pi
 ## The whole system
 
 ```
-  browser (React, next) ──HTTP──► job-web (FastAPI)            terminal ──► job-apply
+  browser (React app) ───HTTP──► job-web (FastAPI)            terminal ──► job-apply
                                         │                                       │
                                         └───────────────► ApplyService ◄────────┘
                                                                │

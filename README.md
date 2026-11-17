@@ -22,7 +22,7 @@ posting ─► extract requirements ─► match each one in parallel ─► let
 
 - **Two MCP servers:** one reads the CV, past letters and saved postings; the other records applications and drafts.
 - **LangGraph runs the steps.** It matches in parallel, loops between checking and fixing, pauses for your review, and saves every step, so a paused run can be picked up later.
-- **Use it from the terminal (`job-apply`) or over HTTP (`job-web`).** A React front end is next.
+- **Use it in the browser, or from the terminal (`job-apply`).** The review screen is a React app over the `job-web` API.
 
 [Architecture](docs/architecture.md) has the full picture and the layers.
 
@@ -43,7 +43,8 @@ Splitting the work helped the small model most: it only has to judge, not plan. 
 uv sync                                                    # install
 uv run job-posting acme_ds --company "Acme" --role "Data Scientist"   # save a copied job advert
 uv run job-apply data/evals/postings/acme_ds.md            # assess, draft, then review and approve
-uv run job-web                                             # or the same over HTTP: http://127.0.0.1:8000/docs
+uv run job-web                                             # or in the browser: run this, then
+cd frontend && npm install && npm run dev                 # open http://127.0.0.1:5173
 ```
 
 It needs your own CV data in `data/`, which is gitignored. [Setup](docs/setup.md) covers that, along with every command and the tests.
@@ -57,7 +58,7 @@ It needs your own CV data in `data/`, which is gitignored. [Setup](docs/setup.md
 | [Agents](docs/agents.md) | The hand-written loop, then LangGraph prebuilt and built by hand, compared on the same evals |
 | [Pipeline](docs/pipeline.md) | Extract → parallel match → report, and what it did for Claude and for qwen |
 | [Letter plans and CVs](docs/letters-and-cvs.md) | Drafting from evidence, the checker and its eval, patch-based fixes, the CV builder |
-| [Workflow and web](docs/workflow-and-web.md) | Pausing for approval (`interrupt()`, checkpointer) and the web API |
+| [Workflow and web](docs/workflow-and-web.md) | Pausing for approval (`interrupt()`, checkpointer), the web API and the review screen |
 | [Evals](docs/evals.md) | Answer keys, metrics, and what the scores showed |
 | [Setup](docs/setup.md) | Installing, your data, usage, tests and CI |
 
@@ -75,9 +76,9 @@ Done:
 - [x] Structured progress events and a single settings object, ready for the frontend
 - [x] Restructure the package: assessment, drafting (engine, checker, letter, CV), workflow, web, evals and thin CLIs, with the step 2–4 experiments kept apart and nothing in the product importing them
 - [x] Decouple the packages: the app reaches the servers only over MCP, the posting file format becomes a small shared package, and `import-linter` in CI enforces the boundaries
+- [x] React review screen: paste a job, follow progress, review the assessment, letter plan and CV, then decide
 
 Web app:
-- [ ] React review screen: paste a job, follow progress, review the assessment, letter plan and CV, then decide
 - [ ] Postings and tracker pages
 - [ ] Tidy-ups: an idempotent tracker save, and typed graph state
 
