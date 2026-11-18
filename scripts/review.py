@@ -6,7 +6,7 @@
 
 The roles are .claude/agents/*-reviewer.md. Each reviewer whose area the branch touches gets
 a diff per changed file (against where the branch left --base) and can read, search and list the repo's
-files - nothing else: no commands, no edits, no web. Reviews are printed and kept in
+files, except data/ and .env - nothing else: no commands, no edits, no web. Reviews are printed and kept in
 .git/review/, so nothing is ever committed.
 
 As a pre-push hook (see .pre-commit-config.yaml) it's advisory: it prints what it finds and
@@ -28,12 +28,17 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 AGENTS = ROOT / ".claude" / "agents"
 OUT = ROOT / ".git" / "review"
 DIFFS = OUT / "diff"
 TOOLS = "Read,Grep,Glob"
+# Inside the repository but never for reviewers: your personal data and secrets (both
+# gitignored). A planted instruction in a diff can't get them read, because these deny rules
+# are enforced by Claude Code itself, whatever the model is told.
+PRIVATE = ["Read(./data/**)", "Read(./.env)", "Read(./.env.*)", "Grep(./data/**)", "Glob(./data/**)"]
 
 # Which reviewers run: always, or when the branch changes a file under one of these paths.
 AREAS: dict[str, tuple[str, ...] | None] = {
@@ -128,12 +133,43 @@ def write_diffs(base: str, files: list[str]) -> None:
         target.write_text(git("diff", f"{base}...HEAD", "--", f), encoding="utf-8")
 
 
-def environment(local_model: str | None, ollama: str) -> dict[str, str]:
-    env = dict(os.environ)
+def changed_files(base: str) -> list[str]:
+    """The branch's changed files. Split on NULs with quoting off, so names with spaces or
+    accents come through whole."""
+    listing = git("-c", "core.quotepath=off", "diff", "--name-only", "-z", f"{base}...HEAD")
+    return [f for f in listing.split("\0") if f]
+
+
+def choose_roles(files: list[str], requested: str | None = None) -> list[str]:
+    """The reviewers to run: the ones asked for, or each whose area the files touch."""
+    if requested:
+        names = list(dict.fromkeys(r.strip() for r in requested.split(",") if r.strip()))
+        unknown = set(names) - set(AREAS)
+        if unknown or not names:
+            raise SystemExit(f"unknown roles {sorted(unknown)} - choose from {', '.join(AREAS)}")
+        return names
+    return [n for n, paths in AREAS.items() if paths is None or any(f.startswith(paths) for f in files)]
+
+
+def ollama_url(host: str) -> str:
+    """OLLAMA_HOST as a URL Claude Code can use: it's often written without a scheme, or as
+    0.0.0.0 (the address Ollama listens on, not one to connect to)."""
+    url = host if "://" in host else f"http://{host}"
+    parts = urlsplit(url)
+    hostname = "localhost" if parts.hostname in (None, "", "0.0.0.0") else parts.hostname
+    return f"{parts.scheme}://{hostname}:{parts.port or 11434}"
+
+
+def is_this_machine(url: str) -> bool:
+    return urlsplit(url).hostname in ("localhost", "127.0.0.1", "::1")
+
+
+def environment(local_model: str | None, ollama: str, base: dict[str, str] | None = None) -> dict[str, str]:
+    env = dict(os.environ if base is None else base)
     for name in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL"):
         env.pop(name, None)  # on Claude: your plan's login, never a pay-per-use API key by accident
     if local_model:
-        env |= {"ANTHROPIC_BASE_URL": ollama, "ANTHROPIC_AUTH_TOKEN": "ollama", "ANTHROPIC_API_KEY": ""}
+        env |= {"ANTHROPIC_BASE_URL": ollama_url(ollama), "ANTHROPIC_AUTH_TOKEN": "ollama", "ANTHROPIC_API_KEY": ""}
     return env
 
 
@@ -146,9 +182,10 @@ def review(role: Role, files: list[str], model: str, env: dict[str, str], timeou
     command = [
         claude_bin(), "-p", "--output-format", "json", "--model", model,
         "--append-system-prompt-file", str(prompt_file),
-        # Read-only: only these tools exist, nothing else is allowed, and the --restricted
-        # mode drops command and web tools and confines reading to this repository.
-        "--tools", TOOLS, "--allowedTools", TOOLS, "--permission-mode", "dontAsk",
+        # Read-only: only these tools exist, nothing else is allowed, data/ and .env are denied,
+        # and the --restricted mode drops command and web tools and confines reading to this
+        # repository (claude --help documents each of these flags).
+        "--tools", TOOLS, "--allowedTools", TOOLS, "--disallowedTools", *PRIVATE, "--permission-mode", "dontAsk",
         "--restricted", "--strict-mcp-config", "--no-session-persistence",
     ]
     started = time.perf_counter()
@@ -190,22 +227,19 @@ def main() -> int:
 
 def run(args: argparse.Namespace) -> int:
     base = git("merge-base", args.base, "HEAD").strip()
-    files = git("diff", "--name-only", f"{base}...HEAD").split()
+    files = changed_files(base)
     if not files:
         print(f"review: no changes since {args.base} - nothing to review")
         return 0
-    if args.roles:
-        names = [r.strip() for r in args.roles.split(",")]
-        unknown = set(names) - set(AREAS)
-        if unknown:
-            raise SystemExit(f"unknown roles {sorted(unknown)} - choose from {', '.join(AREAS)}")
-    else:
-        names = [n for n, paths in AREAS.items() if paths is None or any(f.startswith(paths) for f in files)]
+    names = choose_roles(files, args.roles)
 
     write_diffs(base, files)
     roles = [load_role(n) for n in names]
     env = environment(args.local, args.ollama)
-    on = f"{args.local} on Ollama ({args.ollama})" if args.local else "Claude (your plan)"
+    if args.local and not is_this_machine(url := ollama_url(args.ollama)):
+        print(f"review: note - the diffs and the files the reviewers read go to {url}, another machine, "
+              "unencrypted. That's fine on your own network.", flush=True)
+    on = f"{args.local} on Ollama ({ollama_url(args.ollama)})" if args.local else "Claude (your plan)"
     print(f"review: {len(files)} changed files since {args.base}; {', '.join(names)} reviewing with {on}...",
           flush=True)
 

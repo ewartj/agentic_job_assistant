@@ -134,7 +134,8 @@ cd frontend && npm run check && npm test
   - both agents (hand-written and LangGraph, with both graphs), using scripted fake models;
   - the eval scoring;
   - the web API end to end, and that `frontend/openapi.json` matches it;
-  - the review screen (Vitest): progress, errors, routes and both forms.
+  - the review screen (Vitest): progress, errors, routes and both forms;
+  - the review agents' script: which reviewers run, what they may read, and which account they use.
 - **GitHub Actions** runs on every push and pull request: pytest; ruff and the import contracts; and for the frontend, its generated types, type check, tests and build.
 - **Secret and personal-data checks** ([.pre-commit-config.yaml](../.pre-commit-config.yaml)) run on every commit once installed with `uv run pre-commit install`. In CI, gitleaks also scans the whole git history. The checks block:
   - API keys and tokens (gitleaks);
@@ -165,9 +166,10 @@ SKIP=review-agents git push                         # skip it for one push
 - **Advisory.** The reviews are printed, and kept in `.git/review/`, but a push is never blocked. Agents can be wrong, and they vary from run to run, so treat them as a second pair of eyes.
 - **Your Claude plan, or a local model.**
   - By default the agents run on the Claude plan you're signed in to Claude Code with. The script removes any `ANTHROPIC_API_KEY` first, so a review never bills an API key by accident.
-  - With `--local MODEL` (or `REVIEW_LOCAL_MODEL`), Claude Code talks to Ollama instead (`OLLAMA_HOST`, by default `http://localhost:11434`). Give the model a context window of 64k tokens or more, for example `OLLAMA_CONTEXT_LENGTH=65536` where Ollama runs.
+  - With `--local MODEL` (or `REVIEW_LOCAL_MODEL`), Claude Code talks to Ollama instead (`OLLAMA_HOST`, by default `http://localhost:11434`). Give the model a context window of 64k tokens or more, for example `OLLAMA_CONTEXT_LENGTH=65536` where Ollama runs. If Ollama runs on another machine, the diffs travel there unencrypted, which is fine on your own network; the script says so when it happens.
 - **Read-only.**
   - Each reviewer gets a diff per changed file, and can only read, search and list files in the repository: no commands, no edits, no web.
+  - `data/` and `.env` are denied to every tool by Claude Code's own permission rules, so even a planted instruction can't get your CV or keys read.
   - What it reads is treated as data, never instructions.
   - Lock files and generated files are listed, but their diffs are left out.
 - **Claude Code** must be installed, or the VS Code extension's copy is used. Set `CLAUDE_BIN` if it's somewhere else.
