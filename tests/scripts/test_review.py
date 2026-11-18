@@ -86,11 +86,12 @@ def test_generated_files_are_listed_but_their_diffs_left_out(tmp_path, monkeypat
 def test_a_committed_private_file_is_flagged_but_its_contents_never_copied(tmp_path, monkeypatch):
     monkeypatch.setattr(review, "DIFFS", tmp_path / "diff")
     monkeypatch.setattr(review, "git", lambda *args: "+MY REAL CV TEXT")
-    review.write_diffs("base", ["data/cv.json", ".env", "frontend/.env.local", "docs/env.md"])
+    review.write_diffs("base", ["data/cv.json", ".env", "frontend/.env.local", "docs/env.md", ".env.example"])
     for private in ("data/cv.json", ".env", "frontend/.env.local"):
         text = (tmp_path / "diff" / f"{private}.diff").read_text(encoding="utf-8")
         assert "MY REAL CV TEXT" not in text and "high-severity" in text
-    assert (tmp_path / "diff" / "docs/env.md.diff").read_text(encoding="utf-8") == "+MY REAL CV TEXT"
+    for public in ("docs/env.md", ".env.example"):  # the committed template isn't a secret
+        assert (tmp_path / "diff" / f"{public}.diff").read_text(encoding="utf-8") == "+MY REAL CV TEXT"
 
 
 def test_model_output_cannot_send_terminal_control_codes():

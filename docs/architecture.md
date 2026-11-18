@@ -37,7 +37,7 @@ Inside `job_assistant`, each layer may import the layers below it, never above:
 
 | Layer | Code | Knows about |
 |---|---|---|
-| Commands | `cli/` (`job-apply`, `job-web`, `job-letter`, ...) | Arguments and printing. Nothing else in the package does either |
+| Commands | `cli/` (`job-apply`, `job-web`, `job-letter`, ...) | Arguments and printing. Nothing else in the package does either, except `workflow/runtime.py`, which defines the model flags every command shares |
 | Web API | `web/` (FastAPI) | HTTP; the service and its Pydantic models |
 | Service and evals | `workflow/` (the apply graph, `ApplyService`), `evals/` | Starting, deciding, retrying and listing runs. Never HTTP, never HTML |
 | Drafting | `drafting/` (the engine, the checker, the letter and CV configurations, the Word writer) | The draft → check → fix loop, for any document |
