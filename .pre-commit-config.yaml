@@ -1,5 +1,9 @@
 # Checks that run on every `git commit` (after `uv run pre-commit install`),
 # and in CI on every push. Run them by hand with:  uv run pre-commit run --all-files
+
+# Hooks run on commit unless they say otherwise (the review agents run on push).
+default_stages: [pre-commit]
+
 repos:
   # Secrets: API keys, tokens, private keys, passwords in config files.
   - repo: https://github.com/gitleaks/gitleaks
@@ -30,6 +34,20 @@ repos:
         entry: '(?i)(onedrive|c:\\+users\\+(?!you\\)[a-z]|\b192\.168\.\d|\b10\.\d+\.\d+\.\d+\b|sk-ant-[a-z0-9])'
         language: pygrep
         exclude: ^\.pre-commit-config\.yaml$
+
+      # Before each push: the review agents (.claude/agents/*-reviewer.md) read the branch's
+      # changes and print what they find. Advisory - a push is never blocked. Runs on your
+      # Claude plan, or on Ollama with REVIEW_LOCAL_MODEL set (see scripts/review.py).
+      #   install once:  uv run pre-commit install --hook-type pre-push
+      #   skip once:     SKIP=review-agents git push
+      - id: review-agents
+        name: review agents (security, backend, frontend, tests & docs)
+        entry: uv run python scripts/review.py --hook
+        language: system
+        pass_filenames: false
+        always_run: true
+        verbose: true
+        stages: [pre-push]
 
       # CI only (it needs the full history): scan every commit, not just staged changes.
       #   uv run pre-commit run --hook-stage manual gitleaks-history

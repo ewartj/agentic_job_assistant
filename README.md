@@ -60,7 +60,7 @@ It needs your own CV data in `data/`, which is gitignored. [Setup](docs/setup.md
 | [Letter plans and CVs](docs/letters-and-cvs.md) | Drafting from evidence, the checker and its eval, patch-based fixes, the CV builder |
 | [Workflow and web](docs/workflow-and-web.md) | Pausing for approval (`interrupt()`, checkpointer), the web API and the review screen |
 | [Evals](docs/evals.md) | Answer keys, metrics, and what the scores showed |
-| [Setup](docs/setup.md) | Installing, your data, usage, tests and CI |
+| [Setup](docs/setup.md) | Installing, your data, usage, tests and CI, and the review agents |
 
 ## Next steps
 
@@ -77,6 +77,7 @@ Done:
 - [x] Restructure the package: assessment, drafting (engine, checker, letter, CV), workflow, web, evals and thin CLIs, with the step 2–4 experiments kept apart and nothing in the product importing them
 - [x] Decouple the packages: the app reaches the servers only over MCP, the posting file format becomes a small shared package, and `import-linter` in CI enforces the boundaries
 - [x] React review screen: paste a job, follow progress, review the assessment, letter plan and CV, then decide
+- [x] Review agents before every push (security, backend, frontend, tests & docs), on a Claude plan or a local model
 
 Web app:
 - [ ] Postings and tracker pages

@@ -85,7 +85,8 @@ src/tracker_server/             MCP server for applications and drafts: store.py
                                 importer.py (tracker-import)
 src/job_postings/               the posting file format, shared by cv_server and job_assistant
 src/job_assistant/
-  cli/                          every command: apply, web, postings, pipeline, letter, cv, score, checker_eval
+  cli/                          every command: apply, web, postings, pipeline, letter, cv, score, checker_eval,
+                                openapi
   web/                          the web API: routes, background runs, live progress
   workflow/                     the apply workflow: graph, service, models, runtime
   evals/                        scoring runs against answer keys, and the checker against labelled claims
@@ -93,7 +94,8 @@ src/job_assistant/
   assessment/                   pipeline.py: extract -> parallel match -> report
   llm.py, mcp.py, events.py, traces.py, console.py, config.py    the core
   experiments/                  agent.py (job-agent), graph_agent.py and state_graph.py (job-graph)
-scripts/                        build_letters.py, show_cited.py, try_client.py
+scripts/                        build_letters.py, show_cited.py, try_client.py, review.py (review agents)
+.claude/agents/                 the review agents' roles: security, backend, frontend, tests & docs
 tests/                          one folder per package, plus the shared fixtures
 docs/                           these pages
 ```

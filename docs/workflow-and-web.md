@@ -58,7 +58,7 @@ npm run dev                         # the page, on 127.0.0.1:5173
 
 - **Paste a job:** company, role, link and the advert. It's saved as a posting (the same file `job-posting` writes), and a run starts on it. Saved jobs can be run again from the list.
 - **Follow the run:** the shared assessment fills in requirement by requirement, then the letter plan and the CV side by side, each with its draft number, how many points passed their check, and every unsupported point with the reason.
-- **Review:** the verdict counts, then tabs for the assessment, the letter plan and the CV. Each plan says whether every point is supported, and has the Markdown and `.docx` downloads.
+- **Review:** the verdict counts, then tabs for the assessment, the letter plan and the CV. Each plan says whether every point is supported, with its Markdown to download; the CV also has its `.docx`.
 - **Decide:** approve (saved to the tracker), revise with notes (the letter, the CV or both are redrafted, checked and shown again), or reject (it asks first). A run that stopped part-way has a Retry button.
 
 How it's built:
