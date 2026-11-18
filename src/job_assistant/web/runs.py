@@ -44,24 +44,25 @@ class RunManager:
             raise RunConflict(f"{posting} is already being worked on")
         run_id = self.service.new_run_id(path)
         self._postings[run_id] = posting
-        self._launch(run_id, lambda: self.service.start(path, run_id))
+        self._launch(run_id, f"started on {posting}", lambda: self.service.start(path, run_id))
         return RunView(run_id=run_id, posting=posting, status="running")
 
     async def decide(self, run_id: str, decision: Decision) -> RunView:
         view = await self.view(run_id)
         if view.status != "awaiting_review":
             raise NotAwaitingReview(f"run {run_id} isn't waiting for a review (it's {view.status})")
-        self._launch(run_id, lambda: self.service.decide(run_id, decision))
+        self._launch(run_id, f"decision: {decision.action}", lambda: self.service.decide(run_id, decision))
         return view.model_copy(update={"status": "running", "review": None})
 
     async def retry(self, run_id: str) -> RunView:
         view = await self.view(run_id)
         if view.status != "stopped":
             raise NotStopped(f"run {run_id} hasn't stopped part-way (it's {view.status})")
-        self._launch(run_id, lambda: self.service.retry(run_id))
+        self._launch(run_id, "retrying", lambda: self.service.retry(run_id))
         return view.model_copy(update={"status": "running", "error": None})
 
-    def _launch(self, run_id: str, work: Callable[[], Awaitable[RunView]]) -> None:
+    def _launch(self, run_id: str, what: str, work: Callable[[], Awaitable[RunView]]) -> None:
+        log.info("run %s %s", run_id, what)
         self._errors.pop(run_id, None)
         self.hub.reset(run_id)
 
@@ -69,6 +70,7 @@ class RunManager:
             try:
                 await work()
             except asyncio.CancelledError:
+                log.warning("run %s stopped by the server shutting down", run_id)
                 self._errors[run_id] = "the server shut down - retry to carry on"
                 raise
             except Exception as error:  # noqa: BLE001 - any failure stops this run, not the server
@@ -83,9 +85,11 @@ class RunManager:
     async def _announce_end(self, run_id: str) -> None:
         try:
             view = await self.view(run_id)
-            self.hub.publish(run_id, StatusMessage(status=view.status, error=view.error).model_dump())
+            status = StatusMessage(status=view.status, error=view.error)
         except RunNotFound:  # failed before its first step was saved
-            self.hub.publish(run_id, StatusMessage(status="stopped", error=self._errors.get(run_id)).model_dump())
+            status = StatusMessage(status="stopped", error=self._errors.get(run_id))
+        log.info("run %s is now %s", run_id, status.status)
+        self.hub.publish(run_id, status.model_dump())
         self.hub.publish(run_id, EndMessage().model_dump())
 
     def is_running(self, run_id: str) -> bool:

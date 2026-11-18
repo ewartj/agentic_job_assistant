@@ -93,6 +93,11 @@ class Settings(BaseSettings):
     def tracker_db(self) -> Path:
         return self.data_dir / "tracker.db"
 
+    @property
+    def web_log(self) -> Path:
+        """job-web's log: each run's progress, and errors with their tracebacks."""
+        return self.data_dir / "logs" / "job-web.log"
+
     def server_env(self) -> dict[str, str]:
         """What the MCP servers need to find the data, passed to their processes."""
         return {"CV_SERVER_DATA_DIR": str(self.data_dir), "TRACKER_DB": str(self.tracker_db)}

@@ -4,6 +4,7 @@ the workflow's errors to HTTP status codes.
 create_app takes how to open the service as an argument, so tests pass one built from
 fake models and in-process servers, while job-web passes the real one (runtime.py).
 """
+import logging
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from pathlib import Path
@@ -24,6 +25,8 @@ from job_assistant.workflow.service import ApplyService, NotAwaitingReview, NotS
 # The React dev server (stage 3). Nothing else may call the API from a browser.
 DEV_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
+log = logging.getLogger(__name__)
+
 OpenService = Callable[[Callable[[ProgressEvent], None]], AbstractAsyncContextManager[ApplyService]]
 
 ERRORS: dict[type[Exception], int] = {
@@ -42,7 +45,9 @@ def create_app(open_service: OpenService, postings_dir: Path | None = None, draf
 
     def progress(event: ProgressEvent) -> None:
         # Called from inside a run's graph: current_run() says which run the event is for.
-        hub.publish(current_run(), ProgressMessage(event=event).model_dump())
+        run_id = current_run()
+        log.info("run %s progress %s", run_id, event.model_dump_json())
+        hub.publish(run_id, ProgressMessage(event=event).model_dump())
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:

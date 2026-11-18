@@ -96,8 +96,9 @@ uv run job-apply data/evals/postings/example.md
 uv run job-apply --list
 uv run job-apply --resume <run-id>
 
-# The same, over HTTP (docs at http://127.0.0.1:8000/docs)
+# The same, over HTTP (docs at http://127.0.0.1:8000/docs); it logs to data/logs/job-web.log
 uv run job-web
+tail -f data/logs/job-web.log   # follow it (PowerShell: Get-Content data/logs/job-web.log -Wait)
 
 # Score runs against the answer key
 uv run job-score example --runs
