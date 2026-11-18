@@ -90,7 +90,7 @@ layers = [
     "workflow | evals",
     "drafting",
     "assessment",
-    "llm | mcp | events | traces | console",
+    "llm | mcp | events | traces | console | logs",
     "config",
 ]
 
@@ -101,7 +101,7 @@ source_modules = [
     "job_assistant.cli", "job_assistant.web", "job_assistant.workflow", "job_assistant.evals",
     "job_assistant.drafting", "job_assistant.assessment",
     "job_assistant.llm", "job_assistant.mcp", "job_assistant.events", "job_assistant.traces",
-    "job_assistant.console", "job_assistant.config",
+    "job_assistant.console", "job_assistant.logs", "job_assistant.config",
 ]
 forbidden_modules = ["job_assistant.experiments"]
 

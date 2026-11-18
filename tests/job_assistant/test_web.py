@@ -3,6 +3,7 @@ with fake models and in-process servers - no network and no API calls.
 """
 import asyncio
 import json
+import logging
 from contextlib import asynccontextmanager
 
 import httpx
@@ -204,6 +205,21 @@ async def test_a_run_that_fails_part_way_says_why_and_can_be_retried(make_api):
         assert retried.status_code == 202
         assert (await finished(client, run_id))["status"] == "awaiting_review"
         assert (await client.post(f"/api/runs/{run_id}/retry", json={})).status_code == 409  # not stopped now
+
+
+async def test_the_log_follows_a_run_and_keeps_the_traceback_of_a_failure(make_api, caplog):
+    caplog.set_level(logging.INFO, logger="job_assistant.web")
+    async with make_api(GatedModel(fail_plan_once=True)) as client:
+        run_id = await started(client)
+        await finished(client, run_id)
+    lines = [r.getMessage() for r in caplog.records if r.getMessage().startswith(f"run {run_id}")]
+    assert lines[0] == f"run {run_id} started on acme_eng"
+    progress = [json.loads(line.split(" progress ", 1)[1]) for line in lines if " progress " in line]
+    assert {"extracted", "matched", "started"} <= {event["step"] for event in progress}  # one line each, as JSON
+    assert all(event["model"] for event in progress if event["step"] == "started")
+    assert lines[-1] == f"run {run_id} is now stopped"
+    failure = next(r for r in caplog.records if r.getMessage() == f"run {run_id} failed")
+    assert failure.exc_info and "model went away" in str(failure.exc_info[1])  # the traceback goes in the log
 
 
 async def test_files_are_only_the_runs_own_by_kind(make_api):

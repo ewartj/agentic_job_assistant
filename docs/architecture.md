@@ -42,7 +42,7 @@ Inside `job_assistant`, each layer may import the layers below it, never above:
 | Service and evals | `workflow/` (the apply graph, `ApplyService`), `evals/` | Starting, deciding, retrying and listing runs. Never HTTP, never HTML |
 | Drafting | `drafting/` (the engine, the checker, the letter and CV configurations, the Word writer) | The draft → check → fix loop, for any document |
 | Assessment | `assessment/` (extract → parallel match → report) | Which requirements a posting has, and the evidence for each |
-| Core | `llm`, `mcp`, `events`, `traces`, `console`, then `config` | Models, MCP calls, progress events, run records, the terminal, settings |
+| Core | `llm`, `mcp`, `events`, `traces`, `console`, `logs`, then `config` | Models, MCP calls, progress events, run records, the terminal, the log file, settings |
 
 `experiments/` holds the learning steps (the hand-written agent loop and the LangGraph agents). They use only the core, and nothing imports them.
 
@@ -92,7 +92,7 @@ src/job_assistant/
   evals/                        scoring runs against answer keys, and the checker against labelled claims
   drafting/                     engine.py (draft <-> check <-> fix), checker.py, letter.py, cv.py, docx.py
   assessment/                   pipeline.py: extract -> parallel match -> report
-  llm.py, mcp.py, events.py, traces.py, console.py, config.py    the core
+  llm.py, mcp.py, events.py, traces.py, console.py, logs.py, config.py    the core
   experiments/                  agent.py (job-agent), graph_agent.py and state_graph.py (job-graph)
 scripts/                        build_letters.py, show_cited.py, try_client.py, review.py (review agents)
 .claude/agents/                 the review agents' roles: security, backend, frontend, tests & docs
