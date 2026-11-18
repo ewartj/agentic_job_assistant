@@ -223,3 +223,6 @@ __marimo__/
 data/
 .venv/
 __pycache__/
+
+# The review agents' diffs and reviews (scripts/review.py)
+.review/

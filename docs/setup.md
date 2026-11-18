@@ -61,9 +61,13 @@ uv run cv-server
 npx @modelcontextprotocol/inspector uv run cv-server
 npx @modelcontextprotocol/inspector uv run tracker-server
 
-# Copy a job posting from the browser, then save it and assess it in one step
+# Copy a job posting from the browser, then save it (assess it with job-apply or the review screen)
 uv run job-posting acme_ds --company "Acme" --role "Data Scientist" --url "https://..."
 uv run job-posting acme_ds --replace   # saved the wrong text? copy the advert again and replace it
+
+# After changing what the API takes or returns: refresh the frontend's schema and types
+uv run job-openapi
+cd frontend && npm run gen:api
 
 # Run the agent on a saved posting (the trace is appended to data/evals/runs/<posting>.jsonl)
 uv run job-agent data/evals/postings/example.md
@@ -130,7 +134,8 @@ cd frontend && npm run check && npm test
   - both agents (hand-written and LangGraph, with both graphs), using scripted fake models;
   - the eval scoring;
   - the web API end to end, and that `frontend/openapi.json` matches it;
-  - the review screen (Vitest): progress, errors, routes and both forms.
+  - the review screen (Vitest): progress, errors, routes and both forms;
+  - the review agents' script: which reviewers run, what they may read, and which account they use.
 - **GitHub Actions** runs on every push and pull request: pytest; ruff and the import contracts; and for the frontend, its generated types, type check, tests and build.
 - **Secret and personal-data checks** ([.pre-commit-config.yaml](../.pre-commit-config.yaml)) run on every commit once installed with `uv run pre-commit install`. In CI, gitleaks also scans the whole git history. The checks block:
   - API keys and tokens (gitleaks);
@@ -139,3 +144,34 @@ cd frontend && npm run check && npm test
   - anything under `data/` or `.env`;
   - local paths, private IP addresses and Anthropic keys.
 - **Dependabot** checks the Actions, uv and npm dependencies weekly. Updates are reviewed and merged by hand, never automatically.
+
+## Review agents
+
+Four Claude Code agents review a branch's changes before each push, each with one role. The roles are in [`.claude/agents/`](../.claude/agents/):
+
+| Reviewer | Runs when a push changes | Looks for |
+|---|---|---|
+| `security` | anything | secrets, personal data in committed files, prompt injection, unsafe paths, the API's exposure, risky dependencies |
+| `backend` | `src/`, `tests/`, `scripts/`, `pyproject.toml`, `uv.lock` | bugs, async and LangGraph mistakes, the layering rules, checkpoint compatibility, the API's contract with the frontend |
+| `frontend` | `frontend/` | API shape mismatches, state and race bugs, error and loading states, accessibility |
+| `tests-docs` | anything | untested changes, and docs that no longer match the code |
+
+```bash
+uv run pre-commit install --hook-type pre-push     # once: review before every push
+uv run python scripts/review.py                     # or by hand, on your Claude plan
+uv run python scripts/review.py --local qwen3.5:9b  # or on a model served by Ollama
+SKIP=review-frontend git push                       # skip one (or more, comma-separated) for one push
+```
+
+- **One hook per reviewer.** Each push shows `review: security`, `review: backend` and so on as its own line, with that reviewer's findings under it, or `Skipped` when the push doesn't touch its area. The hooks run one after another, so a push that needs all four takes about three or four minutes; a manual `scripts/review.py` runs them side by side.
+- **Advisory.** The reviews are printed, and kept in `.review/` (gitignored, so they're easy to open but never committed), but a push is never blocked. Agents can be wrong, and they vary from run to run, so treat them as a second pair of eyes.
+- **Your Claude plan, or a local model.**
+  - By default the agents run on the Claude plan you're signed in to Claude Code with. The script removes any `ANTHROPIC_API_KEY` first, so a review never bills an API key by accident.
+  - With `--local MODEL` (or `REVIEW_LOCAL_MODEL`), Claude Code talks to Ollama instead (`OLLAMA_HOST`, by default `http://localhost:11434`). Give the model a context window of 64k tokens or more, for example `OLLAMA_CONTEXT_LENGTH=65536` where Ollama runs. If Ollama runs on another machine, the diffs travel there unencrypted, which is fine on your own network; the script says so when it happens.
+- **Read-only.**
+  - Each reviewer gets a diff per changed file, and can only read, search and list files in the repository: no commands, no edits, no web.
+  - `data/`, `.env` files at any depth and `.git/` are denied to every tool by Claude Code's own permission rules, so even a planted instruction can't get your CV, keys or git credentials read.
+  - What a reviewer says is stripped of terminal control codes before it's printed, so it can't disguise its output.
+  - What it reads is treated as data, never instructions.
+  - Lock files and generated files are listed, but their diffs are left out.
+- **Claude Code** must be installed, or the VS Code extension's copy is used. Set `CLAUDE_BIN` if it's somewhere else.
