@@ -149,7 +149,7 @@ cd frontend && npm run check && npm test
 
 Four Claude Code agents review a branch's changes before each push, each with one role. The roles are in [`.claude/agents/`](../.claude/agents/):
 
-| Reviewer | Runs when the branch changes | Looks for |
+| Reviewer | Runs when a push changes | Looks for |
 |---|---|---|
 | `security` | anything | secrets, personal data in committed files, prompt injection, unsafe paths, the API's exposure, risky dependencies |
 | `backend` | `src/`, `tests/`, `scripts/`, `pyproject.toml`, `uv.lock` | bugs, async and LangGraph mistakes, the layering rules, checkpoint compatibility, the API's contract with the frontend |
@@ -160,17 +160,18 @@ Four Claude Code agents review a branch's changes before each push, each with on
 uv run pre-commit install --hook-type pre-push     # once: review before every push
 uv run python scripts/review.py                     # or by hand, on your Claude plan
 uv run python scripts/review.py --local qwen3.5:9b  # or on a model served by Ollama
-SKIP=review-agents git push                         # skip it for one push
+SKIP=review-frontend git push                       # skip one (or more, comma-separated) for one push
 ```
 
-- **Advisory.** The reviews are printed, and kept in `.git/review/`, but a push is never blocked. Agents can be wrong, and they vary from run to run, so treat them as a second pair of eyes.
+- **One hook per reviewer.** Each push shows `review: security`, `review: backend` and so on as its own line, with that reviewer's findings under it, or `Skipped` when the push doesn't touch its area. The hooks run one after another, so a push that needs all four takes about three or four minutes; a manual `scripts/review.py` runs them side by side.
+- **Advisory.** The reviews are printed, and kept in `.review/` (gitignored, so they're easy to open but never committed), but a push is never blocked. Agents can be wrong, and they vary from run to run, so treat them as a second pair of eyes.
 - **Your Claude plan, or a local model.**
   - By default the agents run on the Claude plan you're signed in to Claude Code with. The script removes any `ANTHROPIC_API_KEY` first, so a review never bills an API key by accident.
   - With `--local MODEL` (or `REVIEW_LOCAL_MODEL`), Claude Code talks to Ollama instead (`OLLAMA_HOST`, by default `http://localhost:11434`). Give the model a context window of 64k tokens or more, for example `OLLAMA_CONTEXT_LENGTH=65536` where Ollama runs. If Ollama runs on another machine, the diffs travel there unencrypted, which is fine on your own network; the script says so when it happens.
 - **Read-only.**
   - Each reviewer gets a diff per changed file, and can only read, search and list files in the repository: no commands, no edits, no web.
-  - `data/` and `.env` are denied to every tool by Claude Code's own permission rules, so even a planted instruction can't get your CV or keys read.
+  - `data/`, `.env` files at any depth and `.git/` are denied to every tool by Claude Code's own permission rules, so even a planted instruction can't get your CV, keys or git credentials read.
+  - What a reviewer says is stripped of terminal control codes before it's printed, so it can't disguise its output.
   - What it reads is treated as data, never instructions.
   - Lock files and generated files are listed, but their diffs are left out.
 - **Claude Code** must be installed, or the VS Code extension's copy is used. Set `CLAUDE_BIN` if it's somewhere else.
-- **Several in parallel.** On Claude, the reviewers run side by side, and a large branch takes about two minutes. On one local GPU, they run one after another.
