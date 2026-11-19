@@ -44,7 +44,7 @@ graph TD;
 - **Progress is typed events, not text** (`src/job_assistant/events.py`): `started`, `extracted`, `matched` (each requirement and its verdict), `drafted` and `checked` (each point, passed or not, and why), each labelled with its document. The terminal turns them into the familiar lines. The web sends them as `StreamMessage`s (`progress`, `status`, `end`), which are in the API schema, so the frontend gets types for them like everything else.
 - **Progress goes to the right run.** Each run's graph is tagged with its id (a context variable), so an event is delivered only to pages following that run, with the backlog first for a page opened part-way through.
 - **A log file: `data/logs/job-web.log`.** It has one line when a run starts, is decided or retried, one per progress event (the event as JSON: `step`, `artifact` for the document, `elapsed` seconds, and the step's own fields, such as `model` on `started`), and one with the run's new status when the work stops. Errors keep their full traceback, including uvicorn's own errors, such as a failed start-up. Warnings and errors also show in the terminal. The log holds posting and CV text, so it stays in `data/`, which is gitignored. It rolls over at 2 MB, keeping three old files. API keys are hidden in every line, in the file and the terminal, tracebacks included (`src/job_assistant/logs.py`).
-- **Clear errors:** 404 for an unknown run or posting; 409 for a decision on a run that isn't paused, or a second run of a posting already in progress; 422 for an invalid name or decision.
+- **Clear errors:** 404 for an unknown run or posting; 409 for a decision on a run that isn't paused, a second run of a posting already in progress, or saving a posting under a name that's taken (the message names the posting, never the file's path); 422 for an invalid name or decision.
 - **Local and locked down.** It listens on `127.0.0.1` only, and there's deliberately no option to change that, since there's no login yet. CORS allows only the React dev server. Downloads are chosen by kind and built from the run's own posting name, never from a path in the request, and nothing in `data/` is served directly.
 
 ## The review screen: `frontend/`
@@ -59,7 +59,7 @@ npm run dev                         # the page, on 127.0.0.1:5173
 
 - **Paste a job:** company, role, link and the advert. It's saved as a posting (the same file `job-posting` writes), and a run starts on it. Saved jobs can be run again from the list.
 - **Follow the run:** the shared assessment fills in requirement by requirement, then the letter plan and the CV side by side, each with its draft number, how many points passed their check, and every unsupported point with the reason.
-- **Review:** the verdict counts, then tabs for the assessment, the letter plan and the CV. Each plan says whether every point is supported, with its Markdown to download; the CV also has its `.docx`.
+- **Review:** the verdict counts, then tabs for the assessment, the letter plan and the CV (the arrow keys, Home and End move between them). Each plan says whether every point is supported, with its Markdown to download; the CV also has its `.docx`.
 - **Decide:** approve (saved to the tracker), revise with notes (the letter, the CV or both are redrafted, checked and shown again), or reject (it asks first). A run that stopped part-way has a Retry button.
 
 How it's built:

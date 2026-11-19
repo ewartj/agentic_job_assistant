@@ -35,7 +35,6 @@ ERRORS: dict[type[Exception], int] = {
     NotAwaitingReview: status.HTTP_409_CONFLICT,
     NotStopped: status.HTTP_409_CONFLICT,
     RunConflict: status.HTTP_409_CONFLICT,
-    FileExistsError: status.HTTP_409_CONFLICT,
 }
 
 

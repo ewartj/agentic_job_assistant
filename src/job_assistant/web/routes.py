@@ -85,6 +85,10 @@ async def add_posting(new: NewPosting, directory: PostingsDir) -> Posting:
                      company=new.company, role=new.role, url=new.url)
     except ValueError as error:  # unsafe name, or no text
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from error
+    except FileExistsError as error:  # its own message names the file's full path: not for the page
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            f"a posting named {new.name!r} is already saved - replace it, or pick another name"
+                            ) from error
     return await get_posting(new.name, directory)
 
 

@@ -103,7 +103,9 @@ async def test_postings_are_saved_listed_and_read_back(make_api):
 
         listed = (await client.get("/api/postings")).json()
         assert [(p["name"], p["role"]) for p in listed] == [("acme_eng", "Engineer")]
-        assert (await client.post("/api/postings", json=POSTING)).status_code == 409  # exists
+        exists = await client.post("/api/postings", json=POSTING)
+        assert exists.status_code == 409 and "'acme_eng' is already saved" in exists.json()["detail"]
+        assert "postings" not in exists.json()["detail"]  # no path from this machine on the page
         replaced = await client.post("/api/postings", json=POSTING | {"text": "New advert.", "replace": True})
         assert replaced.json()["text"] == "New advert." and replaced.json()["company"] == "Acme Health"
 

@@ -16,10 +16,16 @@ export interface RunState {
   busy: boolean;
   decide: (decision: Decision) => Promise<void>;
   retry: () => Promise<void>;
+  /** Fetch the run again, and follow its progress again if it's still working. */
+  refresh: () => void;
 }
 
 async function fetchRun(runId: string): Promise<RunView> {
   return unwrap(await api.GET("/api/runs/{run_id}", { params: { path: { run_id: runId } } }));
+}
+
+function message(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
 }
 
 export function useRun(runId: string): RunState {
@@ -27,13 +33,14 @@ export function useRun(runId: string): RunState {
   const [progress, setProgress] = useState<Progress>(emptyProgress);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [connection, setConnection] = useState(0); // bumped to follow the events again
 
   const reload = useCallback(async () => {
     try {
       setView(await fetchRun(runId));
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(`Couldn't load the run (${message(e)}).`);
     }
   }, [runId]);
 
@@ -48,13 +55,23 @@ export function useRun(runId: string): RunState {
   useEffect(() => {
     if (!running) return;
     return followRun(runId, {
-      onMessage: (message) => {
-        if (message.type === "progress") setProgress((p) => addEvent(p, message.event));
-        else if (message.type === "status") void reload();
+      onMessage: (m) => {
+        if (m.type === "progress") setProgress((p) => addEvent(p, m.event));
+        else if (m.type === "status") {
+          // The status is known now, so the page never stays on "Working" - even if the
+          // reload (for the review and the rest) fails. The review comes with the reload.
+          setView((v) => v && { ...v, status: m.status, error: m.error ?? null });
+          void reload();
+        }
       },
       onLost: () => setError("Lost the connection to job-web. Is it still running?"),
     });
-  }, [runId, running, reload]);
+  }, [runId, running, reload, connection]);
+
+  const refresh = useCallback(() => {
+    setConnection((n) => n + 1);
+    void reload();
+  }, [reload]);
 
   const act = useCallback(async (request: () => Promise<RunView>) => {
     setBusy(true);
@@ -64,7 +81,7 @@ export function useRun(runId: string): RunState {
       setView(next);
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(message(e));
     } finally {
       setBusy(false);
     }
@@ -75,5 +92,5 @@ export function useRun(runId: string): RunState {
     act(async () => unwrap(await api.POST("/api/runs/{run_id}/decision", { ...path, body: decision })));
   const retry = () => act(async () => unwrap(await api.POST("/api/runs/{run_id}/retry", path)));
 
-  return { view, progress, error, busy, decide, retry };
+  return { view, progress, error, busy, decide, retry, refresh };
 }
