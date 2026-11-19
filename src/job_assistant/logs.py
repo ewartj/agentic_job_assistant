@@ -19,12 +19,16 @@ KEY_PATTERN = re.compile(r"sk-ant-[A-Za-z0-9_-]+")  # an Anthropic key, wherever
 HIDDEN = "[redacted]"
 
 
-class Redacting(logging.Formatter):
-    """Formats a record as usual, then hides API keys anywhere in it - the message, the
-    arguments, an exception's text or its traceback."""
+class RedactingMixin:
+    """Put before any formatter class: formats a record as that class does, then hides API
+    keys anywhere in it - the message, the arguments, an exception's text or its traceback."""
 
     def format(self, record: logging.LogRecord) -> str:
-        return redact(super().format(record))
+        return redact(super().format(record))  # type: ignore[misc]
+
+
+class Redacting(RedactingMixin, logging.Formatter):
+    pass
 
 
 def redact(text: str) -> str:

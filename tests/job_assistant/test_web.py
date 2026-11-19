@@ -222,6 +222,20 @@ async def test_the_log_follows_a_run_and_keeps_the_traceback_of_a_failure(make_a
     assert failure.exc_info and "model went away" in str(failure.exc_info[1])  # the traceback goes in the log
 
 
+async def test_the_log_records_retries_and_decisions(make_api, caplog):
+    caplog.set_level(logging.INFO, logger="job_assistant.web")
+    async with make_api(GatedModel(fail_plan_once=True)) as client:
+        run_id = await started(client)
+        await finished(client, run_id)
+        await client.post(f"/api/runs/{run_id}/retry", json={})
+        assert (await finished(client, run_id))["status"] == "awaiting_review"
+        await client.post(f"/api/runs/{run_id}/decision", json={"action": "approve"})
+        await finished(client, run_id)
+    lines = [r.getMessage() for r in caplog.records]
+    for expected in ("retrying", "is now awaiting_review", "decision: approve", "is now saved"):
+        assert f"run {run_id} {expected}" in lines
+
+
 async def test_files_are_only_the_runs_own_by_kind(make_api):
     async with make_api(GatedModel()) as client:
         run_id = await started(client)
