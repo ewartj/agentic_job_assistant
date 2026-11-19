@@ -9,17 +9,22 @@ export function Home() {
   const [postings, setPostings] = useState<PostingSummary[] | null>(null);
   const [runs, setRuns] = useState<RunView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
+  // An earlier error stays on screen until this attempt ends, so the "Try again" button
+  // (and keyboard focus on it) isn't pulled away mid-retry.
   const load = useCallback(() => {
-    setError(null);
+    setLoading(true);
     Promise.all([api.GET("/api/postings"), api.GET("/api/runs")])
       .then(([p, r]) => {
         setPostings(unwrap(p));
         setRuns(unwrap(r));
+        setError(null);
       })
       .catch((e: unknown) =>
         setError(`Couldn't reach job-web (${e instanceof Error ? e.message : String(e)}). Is it running?`),
-      );
+      )
+      .finally(() => setLoading(false));
   }, []);
 
   useEffect(load, [load]);
@@ -37,8 +42,8 @@ export function Home() {
       {error && (
         <div className="row" role="alert">
           <p className="error">{error}</p>
-          <button type="button" onClick={load}>
-            Try again
+          <button type="button" onClick={() => loading || load()} aria-disabled={loading}>
+            {loading ? "Trying again..." : "Try again"}
           </button>
         </div>
       )}

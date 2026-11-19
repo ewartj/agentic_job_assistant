@@ -10,17 +10,23 @@ export interface Follow {
   onLost: () => void;
 }
 
-const TYPES: ReadonlySet<string> = new Set(["progress", "status", "end"]);
+const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 
 /** The message in an event's data, or null if it isn't one (so a bad line can't break the page). */
 export function parseMessage(data: string): StreamMessage | null {
+  let message: unknown;
   try {
-    const message: unknown = JSON.parse(data);
-    const type = (message as { type?: unknown } | null)?.type;
-    return typeof type === "string" && TYPES.has(type) ? (message as StreamMessage) : null;
+    message = JSON.parse(data);
   } catch {
     return null;
   }
+  if (!isObject(message)) return null;
+  // Each kind with the fields the page relies on.
+  const valid =
+    message.type === "end" ||
+    (message.type === "status" && typeof message.status === "string") ||
+    (message.type === "progress" && isObject(message.event) && typeof message.event.step === "string");
+  return valid ? (message as StreamMessage) : null;
 }
 
 /** Starts following; returns a function that stops. */

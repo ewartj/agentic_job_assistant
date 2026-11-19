@@ -6,20 +6,26 @@ import { StatusBadge } from "./StatusBadge";
 
 /** One run: its progress while it works, the review when it pauses, and how it ended. */
 export function RunPage({ runId }: { runId: string }) {
-  const { view, progress, error, busy, decide, retry, refresh } = useRun(runId);
+  const { view, progress, loadError, actionError, busy, decide, retry, refresh } = useRun(runId);
 
   return (
     <div className="stack">
       <p>
         <a href="#/">← All jobs</a>
       </p>
-      {error && (
+      {loadError && (
         <div className="row" role="alert">
-          <p className="error">{error}</p>
+          <p className="error">{loadError}</p>
           <button type="button" onClick={refresh}>
             Try again
           </button>
         </div>
+      )}
+      {/* Nothing was done: the decision or retry button is still there to use again. */}
+      {actionError && (
+        <p className="error" role="alert">
+          That didn't go through: {actionError}
+        </p>
       )}
       {view && (
         <>
@@ -48,7 +54,7 @@ export function RunPage({ runId }: { runId: string }) {
           {view.status === "awaiting_review" && view.review && <DecisionForm onDecide={decide} busy={busy} />}
         </>
       )}
-      {!view && !error && <p className="muted">Loading...</p>}
+      {!view && !loadError && <p className="muted">Loading...</p>}
     </div>
   );
 }
