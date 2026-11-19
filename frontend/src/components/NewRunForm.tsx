@@ -38,16 +38,23 @@ export function NewRunForm({ onStart }: Props) {
     try {
       // Saved already (the run failed to start last time)? Then just try the run again.
       if (savedAs !== shownName) {
-        unwrap(
-          await api.POST("/api/postings", {
-            body: { name: shownName, text, company: company || null, role: role || null, url: url || null, replace },
-          }),
-        );
+        try {
+          unwrap(
+            await api.POST("/api/postings", {
+              body: { name: shownName, text, company: company || null, role: role || null, url: url || null, replace },
+            }),
+          );
+        } catch (e) {
+          // Only here does 409 mean "a posting with this name is saved": starting a run
+          // gives 409 too, when the posting is already being worked on.
+          setExists(e instanceof ApiError && e.status === 409);
+          throw e;
+        }
         setSavedAs(shownName);
+        setExists(false);
       }
       await onStart(shownName);
     } catch (e) {
-      setExists(e instanceof ApiError && e.status === 409);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);

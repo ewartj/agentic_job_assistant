@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api, unwrap, type PostingSummary, type RunView } from "../api/client";
 import { runHref } from "../routes";
 import { NewRunForm } from "./NewRunForm";
@@ -10,7 +10,8 @@ export function Home() {
   const [runs, setRuns] = useState<RunView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = useCallback(() => {
+    setError(null);
     Promise.all([api.GET("/api/postings"), api.GET("/api/runs")])
       .then(([p, r]) => {
         setPostings(unwrap(p));
@@ -21,6 +22,11 @@ export function Home() {
       );
   }, []);
 
+  useEffect(load, [load]);
+
+  // Not loaded yet: "Loading...", unless loading failed - then the error above says why.
+  const pending = error ? "Not loaded." : "Loading...";
+
   async function start(posting: string) {
     const run = unwrap(await api.POST("/api/runs", { body: { posting } }));
     window.location.hash = runHref(run.run_id);
@@ -28,12 +34,19 @@ export function Home() {
 
   return (
     <div className="stack">
-      {error && <p className="error" role="alert">{error}</p>}
+      {error && (
+        <div className="row" role="alert">
+          <p className="error">{error}</p>
+          <button type="button" onClick={load}>
+            Try again
+          </button>
+        </div>
+      )}
       <NewRunForm onStart={start} />
       <section className="card stack">
         <h2>Runs</h2>
         {runs === null ? (
-          <p className="muted">Loading...</p>
+          <p className="muted">{pending}</p>
         ) : runs.length === 0 ? (
           <p className="muted">No runs yet.</p>
         ) : (
@@ -48,12 +61,19 @@ export function Home() {
           </ul>
         )}
       </section>
-      <SavedPostings postings={postings} onStart={start} />
+      <SavedPostings postings={postings} pending={pending} onStart={start} />
     </div>
   );
 }
 
-function SavedPostings({ postings, onStart }: { postings: PostingSummary[] | null; onStart: (name: string) => Promise<void> }) {
+interface SavedPostingsProps {
+  postings: PostingSummary[] | null;
+  /** What to show while postings is null. */
+  pending: string;
+  onStart: (name: string) => Promise<void>;
+}
+
+function SavedPostings({ postings, pending, onStart }: SavedPostingsProps) {
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState<string | null>(null);
 
@@ -73,7 +93,7 @@ function SavedPostings({ postings, onStart }: { postings: PostingSummary[] | nul
       <h2>Saved jobs</h2>
       {error && <p className="error" role="alert">{error}</p>}
       {postings === null ? (
-        <p className="muted">Loading...</p>
+        <p className="muted">{pending}</p>
       ) : postings.length === 0 ? (
         <p className="muted">None saved yet.</p>
       ) : (

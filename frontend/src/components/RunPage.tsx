@@ -6,14 +6,21 @@ import { StatusBadge } from "./StatusBadge";
 
 /** One run: its progress while it works, the review when it pauses, and how it ended. */
 export function RunPage({ runId }: { runId: string }) {
-  const { view, progress, error, busy, decide, retry } = useRun(runId);
+  const { view, progress, error, busy, decide, retry, refresh } = useRun(runId);
 
   return (
     <div className="stack">
       <p>
         <a href="#/">← All jobs</a>
       </p>
-      {error && <p className="error" role="alert">{error}</p>}
+      {error && (
+        <div className="row" role="alert">
+          <p className="error">{error}</p>
+          <button type="button" onClick={refresh}>
+            Try again
+          </button>
+        </div>
+      )}
       {view && (
         <>
           <header className="row spread">
@@ -37,7 +44,8 @@ export function RunPage({ runId }: { runId: string }) {
           )}
           {view.status === "rejected" && <p className="card muted">Rejected: nothing was saved.</p>}
           {view.review && <ReviewPanel review={view.review} runId={view.run_id} />}
-          {view.status === "awaiting_review" && <DecisionForm onDecide={decide} busy={busy} />}
+          {/* Only with the review in view: never approve what you haven't seen. */}
+          {view.status === "awaiting_review" && view.review && <DecisionForm onDecide={decide} busy={busy} />}
         </>
       )}
       {!view && !error && <p className="muted">Loading...</p>}

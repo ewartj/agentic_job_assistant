@@ -49,4 +49,36 @@ describe("ReviewPanel", () => {
       "/api/runs/acme_ds-20261117-101500/files/cv",
     );
   });
+
+  it("links each tab to the panel it shows", () => {
+    render(<ReviewPanel review={REVIEW} runId={REVIEW.run_id} />);
+    const tab = screen.getByRole("tab", { name: "Assessment" });
+    const panel = screen.getByRole("tabpanel");
+    expect(tab).toHaveAttribute("aria-controls", panel.id);
+    expect(panel).toHaveAccessibleName("Assessment");
+  });
+
+  it("moves between tabs with the arrow keys, Home and End", async () => {
+    const user = userEvent.setup();
+    render(<ReviewPanel review={REVIEW} runId={REVIEW.run_id} />);
+    const tab = (name: RegExp) => screen.getByRole("tab", { name });
+
+    await user.tab(); // Tab reaches the chosen tab only
+    expect(tab(/Assessment/)).toHaveFocus();
+    expect(tab(/Letter plan/)).toHaveAttribute("tabindex", "-1");
+
+    await user.keyboard("{ArrowRight}");
+    expect(tab(/Letter plan/)).toHaveFocus();
+    expect(tab(/Letter plan/)).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tabpanel")).toHaveTextContent("I built the AWS platform");
+
+    await user.keyboard("{End}");
+    expect(tab(/CV/)).toHaveFocus();
+    await user.keyboard("{ArrowRight}"); // wraps round
+    expect(tab(/Assessment/)).toHaveFocus();
+    await user.keyboard("{ArrowLeft}");
+    expect(tab(/CV/)).toHaveFocus();
+    await user.keyboard("{Home}");
+    expect(tab(/Assessment/)).toHaveAttribute("aria-selected", "true");
+  });
 });
