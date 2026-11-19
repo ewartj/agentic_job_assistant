@@ -3,7 +3,10 @@ import { FakeEventSource } from "../test-utils";
 import { followRun, parseMessage } from "./events";
 
 beforeEach(() => FakeEventSource.install());
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks(); // console.warn, silenced in one test
+});
 
 describe("parseMessage", () => {
   it("reads the API's messages", () => {
@@ -11,7 +14,11 @@ describe("parseMessage", () => {
     expect(parseMessage('{"type": "status", "status": "saved"}')).toEqual({ type: "status", status: "saved" });
   });
 
-  it.each(["not json", "", "null", "42", '{"no": "type"}', '{"type": "surprise"}'])(
+  it.each([
+    "not json", "", "null", "42", '{"no": "type"}', '{"type": "surprise"}',
+    '{"type": "status"}', // no status
+    '{"type": "progress"}', '{"type": "progress", "event": {}}', // no event, or one with no step
+  ])(
     "turns %j into null, not an exception",
     (data) => expect(parseMessage(data)).toBeNull(),
   );

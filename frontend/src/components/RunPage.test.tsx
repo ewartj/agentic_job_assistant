@@ -82,6 +82,21 @@ describe("RunPage", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
+  it("says a failed decision didn't go through, and doesn't offer a reload in its place", async () => {
+    fakeApi({
+      [VIEW]: [ok(view("awaiting_review", { review: REVIEW }))],
+      [`POST /api/runs/${RUN}/decision`]: [fails()],
+    });
+    const user = userEvent.setup();
+    render(<RunPage runId={RUN} />);
+
+    await user.click(await screen.findByRole("button", { name: "Approve and save" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("That didn't go through");
+    expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Approve and save" })).toBeEnabled(); // decide again
+  });
+
   it("retries a stopped run from where it stopped", async () => {
     const fetch = fakeApi({
       [VIEW]: [ok(view("stopped", { error: "model went away" }))],
@@ -94,6 +109,6 @@ describe("RunPage", () => {
 
     expect(fetch.mock.calls.some(([r]) => r.method === "POST")).toBe(true);
     expect(await screen.findByRole("heading", { name: /Working/ })).toBeInTheDocument();
-    expect(FakeEventSource.last).not.toBeNull(); // following the retried work
+    expect(FakeEventSource.last!.url).toBe(`/api/runs/${RUN}/events`); // following the retried work
   });
 });
