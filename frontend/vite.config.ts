@@ -16,5 +16,7 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/test-setup.ts"],
+    // Typing a whole advert key by key (user-event) can pass the default 5s on a busy laptop.
+    testTimeout: 15_000,
   },
 });

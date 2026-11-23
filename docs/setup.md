@@ -135,7 +135,7 @@ cd frontend && npm run check && npm test
   - both agents (hand-written and LangGraph, with both graphs), using scripted fake models;
   - the eval scoring;
   - the web API end to end, and that `frontend/openapi.json` matches it;
-  - the review screen (Vitest): progress, errors, routes and both forms;
+  - the web app (Vitest): progress, errors, routes, both forms and every page;
   - the review agents' script: which reviewers run, what they may read, and which account they use.
 - **GitHub Actions** runs on every push and pull request: pytest; ruff and the import contracts; and for the frontend, its generated types, type check, tests and build.
 - **Secret and personal-data checks** ([.pre-commit-config.yaml](../.pre-commit-config.yaml)) run on every commit once installed with `uv run pre-commit install`. In CI, gitleaks also scans the whole git history. The checks block:

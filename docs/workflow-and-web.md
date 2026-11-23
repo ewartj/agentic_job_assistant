@@ -38,7 +38,13 @@ graph TD;
 | `POST /api/runs/{id}/decision` | Approve, revise (with notes) or reject; also runs in the background |
 | `POST /api/runs/{id}/retry` | Carry on a run that stopped part-way, from its last saved step |
 | `GET /api/runs/{id}/files/{kind}` | Download the letter plan, the CV plan or the `.docx` |
+| `POST /api/postings/{name}/archive` | Put a posting aside, or bring it back. The file is kept: the evals read the same folder |
+| `GET /api/applications`, `GET /api/applications/{id}` | The tracker's applications; one with its status history and its drafts (without their text) |
+| `POST /api/applications/{id}/status` | Move an application on, with an optional note. Every change is kept in its history |
+| `GET /api/applications/{id}/drafts/{kind}` | A draft's text: the latest version, or `?version=n` |
 
+- **The tracker is reached over MCP,** like everything else in the app: `workflow/tracker.py` calls tracker-server's tools on the connection the apply graph already has, and returns typed models. It never opens the tracker's database.
+- **Archived postings** are listed in `.archived` in the postings folder, one name per line. The posting files don't change.
 - **The routes hold no workflow logic.** They validate, call the run manager (which calls `ApplyService`), and return the workflow's own Pydantic models. The OpenAPI schema therefore describes exactly what the frontend gets, and the frontend's TypeScript types are generated from it.
 - **Runs never block a request.** Each run is a background task. Its state is always read from the checkpointer, so runs started from `job-apply` show up too, and a restart loses nothing. A run that fails part-way is reported as `stopped` with the reason, and `retry` carries on from its last completed step.
 - **Progress is typed events, not text** (`src/job_assistant/events.py`): `started`, `extracted`, `matched` (each requirement and its verdict), `drafted` and `checked` (each point, passed or not, and why), each labelled with its document. The terminal turns them into the familiar lines. The web sends them as `StreamMessage`s (`progress`, `status`, `end`), which are in the API schema, so the frontend gets types for them like everything else.
@@ -47,7 +53,7 @@ graph TD;
 - **Clear errors:** 404 for an unknown run or posting; 409 for a decision on a run that isn't paused, a second run of a posting already in progress, or saving a posting under a name that's taken (the message names the posting, never the file's path); 422 for an invalid name or decision.
 - **Local and locked down.** It listens on `127.0.0.1` only, and there's deliberately no option to change that, since there's no login yet. CORS allows only the React dev server. Downloads are chosen by kind and built from the run's own posting name, never from a path in the request, and nothing in `data/` is served directly.
 
-## The review screen: `frontend/`
+## The web app: `frontend/`
 
 A React app (Vite, TypeScript) over the web API. Run both, then open http://127.0.0.1:5173:
 
@@ -57,7 +63,15 @@ cd frontend && npm install          # once
 npm run dev                         # the page, on 127.0.0.1:5173
 ```
 
-- **Paste a job:** company, role, link and the advert. It's saved as a posting (the same file `job-posting` writes), and a run starts on it. Saved jobs can be run again from the list.
+Three pages, in the bar at the top:
+
+- **Home:** paste a new job, pick up any run that needs you (working, ready for review, or stopped), and assess the saved jobs you haven't looked at yet.
+- **Saved jobs:** every saved job, each with a badge for how its latest run went (linking to it), its advert, and buttons to assess it again or archive it. Archived jobs are hidden unless you ask for them, and can be brought back.
+- **Applications:** the tracker, filtered by status, or to every application you sent whatever came of it ("Applied for"). Each application shows its status history, a form to move it on (applied, interviewing...) with a note, and its saved drafts, any version of which can be read.
+
+A run, from start to decision:
+
+- **Paste a job:** company, role, link and the advert. It's saved as a posting (the same file `job-posting` writes), and a run starts on it.
 - **Follow the run:** the shared assessment fills in requirement by requirement, then the letter plan and the CV side by side, each with its draft number, how many points passed their check, and every unsupported point with the reason.
 - **Review:** the verdict counts, then tabs for the assessment, the letter plan and the CV (the arrow keys, Home and End move between them). Each plan says whether every point is supported, with its Markdown to download; the CV also has its `.docx`.
 - **Decide:** approve (saved to the tracker), revise with notes (the letter, the CV or both are redrafted, checked and shown again), or reject (it asks first). A run that stopped part-way has a Retry button.
@@ -68,5 +82,5 @@ How it's built:
 - **The API stays the source of truth.** The page keeps no copy of a run's state: it follows the events while a run works, and fetches the run again whenever a stretch of work ends.
 - **One origin.** In development Vite passes `/api` on to `job-web`, so the browser talks to one origin and server-sent events need no cross-origin set-up.
 - **Safe rendering.** Plans and assessments are Markdown, rendered without raw HTML, so text from a job advert can't inject anything into the page.
-- **Small, plain parts:** `src/api/` (the typed client and the event stream), `src/run/` (progress built up from events, as pure functions, and the `useRun` hook), and `src/components/`. Pages live in the URL hash (`#/runs/<id>`), so a reload keeps your place without a router library.
-- **Tested** with Vitest and Testing Library: the progress logic, error messages, posting names and routes, the decision form (revise needs notes, reject asks first) and the paste form.
+- **Small, plain parts:** `src/api/` (the typed client and the event stream), `src/run/` (progress built up from events, as pure functions, and the `useRun` hook), and `src/components/`. Pages live in the URL hash (`#/runs/<id>`, `#/jobs`, `#/applications/<id>`), so a reload keeps your place without a router library.
+- **Tested** with Vitest and Testing Library: the progress logic, error messages, posting names and routes, the decision form (revise needs notes, reject asks first), the paste form, each page (with the API faked), and that Markdown never renders HTML from an advert.

@@ -1,7 +1,7 @@
 """The HTTP API. Each route validates the request, calls the run manager or the postings
 store, and returns a Pydantic model - no workflow logic lives here.
 
-Errors are mapped to status codes in app.py: unknown run or posting 404; a request that
+Errors are mapped to status codes in app.py: unknown run, posting or application 404; a request that
 clashes with the run's state (deciding on a run that isn't paused, a second run of the
 same posting) 409; an invalid name or decision 422.
 """
@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 
 from job_assistant.web.runs import RunManager
 from job_assistant.web.schemas import (
+    Archive,
     EndMessage,
     Health,
     NewPosting,
@@ -25,7 +26,23 @@ from job_assistant.web.schemas import (
     StreamMessage,
 )
 from job_assistant.workflow.models import Decision, RunView
-from job_postings import NAME, list_postings, posting_path, save_posting, split_front_matter
+from job_assistant.workflow.tracker import (
+    Application,
+    ApplicationDetail,
+    Draft,
+    DraftKind,
+    StatusUpdate,
+    Tracker,
+)
+from job_postings import (
+    NAME,
+    archived_postings,
+    list_postings,
+    posting_path,
+    save_posting,
+    set_archived,
+    split_front_matter,
+)
 
 router = APIRouter()
 
@@ -51,7 +68,15 @@ def drafts_dir(request: Request) -> Path:
     return request.app.state.drafts_dir
 
 
+def tracker(request: Request) -> Tracker:
+    tracker = request.app.state.manager.service.tracker
+    if tracker is None:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "the tracker isn't connected")
+    return tracker
+
+
 Runs = Annotated[RunManager, Depends(manager)]
+Applications = Annotated[Tracker, Depends(tracker)]
 PostingsDir = Annotated[Path, Depends(postings_dir)]
 DraftsDir = Annotated[Path, Depends(drafts_dir)]
 
@@ -65,7 +90,8 @@ async def health() -> Health:
 
 @router.get("/postings")
 async def get_postings(directory: PostingsDir) -> list[PostingSummary]:
-    return [PostingSummary(**p) for p in list_postings(directory)]
+    archived = archived_postings(directory)
+    return [PostingSummary(**p, archived=p["name"] in archived) for p in list_postings(directory)]
 
 
 @router.get("/postings/{name}")
@@ -74,8 +100,19 @@ async def get_posting(name: str, directory: PostingsDir) -> Posting:
     if not path.exists():
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"no saved posting named {name!r}")
     meta, text = split_front_matter(path.read_text(encoding="utf-8"))
-    return Posting(name=name, text=text.strip(), **{k: None if meta.get(k) is None else str(meta[k])
-                                            for k in ("company", "role", "url", "saved")})
+    return Posting(name=name, text=text.strip(), archived=name in archived_postings(directory),
+                   **{k: None if meta.get(k) is None else str(meta[k]) for k in ("company", "role", "url", "saved")})
+
+
+@router.post("/postings/{name}/archive")
+async def archive_posting(name: str, body: Archive, directory: PostingsDir) -> Posting:
+    """Put a posting aside, or bring it back. The file is kept either way."""
+    _posting_file(directory, name)  # 422 for an unsafe name
+    try:
+        set_archived(directory, name, body.archived)
+    except FileNotFoundError as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
+    return await get_posting(name, directory)
 
 
 @router.post("/postings", status_code=status.HTTP_201_CREATED)
@@ -163,3 +200,30 @@ async def download(run_id: str, kind: FileKind, runs: Runs,
     if path.parent != directory.resolve() or not path.is_file():
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"no {kind} for run {run_id} yet")
     return FileResponse(path, media_type=media_type, filename=path.name)
+
+
+# --- Applications (the tracker) --------------------------------------------------------
+
+@router.get("/applications")
+async def get_applications(applications: Applications) -> list[Application]:
+    """Every tracked application, most recently updated first."""
+    return await applications.applications()
+
+
+@router.get("/applications/{application_id}")
+async def get_application(application_id: int, applications: Applications) -> ApplicationDetail:
+    """One application, with its status history and its drafts (without their text)."""
+    return await applications.application(application_id)
+
+
+@router.post("/applications/{application_id}/status")
+async def update_status(application_id: int, update: StatusUpdate, applications: Applications) -> ApplicationDetail:
+    """Move an application on, e.g. to "applied". Every change is kept in its history."""
+    return await applications.update_status(application_id, update)
+
+
+@router.get("/applications/{application_id}/drafts/{kind}")
+async def get_draft(application_id: int, kind: DraftKind, applications: Applications,
+                    version: int | None = None) -> Draft:
+    """A draft's text: the latest version, unless one is asked for."""
+    return await applications.draft(application_id, kind, version)

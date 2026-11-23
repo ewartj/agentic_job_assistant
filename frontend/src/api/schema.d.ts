@@ -4,6 +4,86 @@
  */
 
 export interface paths {
+    "/api/applications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Applications
+         * @description Every tracked application, most recently updated first.
+         */
+        get: operations["get_applications_api_applications_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/applications/{application_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Application
+         * @description One application, with its status history and its drafts (without their text).
+         */
+        get: operations["get_application_api_applications__application_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/applications/{application_id}/drafts/{kind}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Draft
+         * @description A draft's text: the latest version, unless one is asked for.
+         */
+        get: operations["get_draft_api_applications__application_id__drafts__kind__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/applications/{application_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Update Status
+         * @description Move an application on, e.g. to "applied". Every change is kept in its history.
+         */
+        post: operations["update_status_api_applications__application_id__status_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health": {
         parameters: {
             query?: never;
@@ -50,6 +130,26 @@ export interface paths {
         get: operations["get_posting_api_postings__name__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/postings/{name}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Archive Posting
+         * @description Put a posting aside, or bring it back. The file is kept either way.
+         */
+        post: operations["archive_posting_api_postings__name__archive_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -175,6 +275,88 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** Application */
+        Application: {
+            /**
+             * Applied On
+             * @description YYYY-MM-DD, or just YYYY-MM or YYYY for old ones
+             */
+            applied_on?: string | null;
+            /** Company */
+            company: string;
+            /** Created At */
+            created_at: string;
+            /** Id */
+            id: number;
+            /** Notes */
+            notes?: string | null;
+            /**
+             * Posting
+             * @description The saved posting it came from, if any
+             */
+            posting?: string | null;
+            /** Role */
+            role: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "interested" | "applied" | "interviewing" | "offer" | "rejected" | "withdrawn";
+            /** Updated At */
+            updated_at: string;
+            /** Url */
+            url?: string | null;
+        };
+        /** ApplicationDetail */
+        ApplicationDetail: {
+            /**
+             * Applied On
+             * @description YYYY-MM-DD, or just YYYY-MM or YYYY for old ones
+             */
+            applied_on?: string | null;
+            /** Company */
+            company: string;
+            /** Created At */
+            created_at: string;
+            /**
+             * Drafts
+             * @description Every version of every draft, without the text
+             */
+            drafts: components["schemas"]["DraftSummary"][];
+            /**
+             * History
+             * @description Every status it has had, oldest first
+             */
+            history: components["schemas"]["StatusChange"][];
+            /** Id */
+            id: number;
+            /** Notes */
+            notes?: string | null;
+            /**
+             * Posting
+             * @description The saved posting it came from, if any
+             */
+            posting?: string | null;
+            /** Role */
+            role: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "interested" | "applied" | "interviewing" | "offer" | "rejected" | "withdrawn";
+            /** Updated At */
+            updated_at: string;
+            /** Url */
+            url?: string | null;
+        };
+        /** Archive */
+        Archive: {
+            /**
+             * Archived
+             * @description true to put the posting aside, false to bring it back
+             */
+            archived: boolean;
+        };
         /**
          * Artifact
          * @description One output under review: the letter plan or the CV.
@@ -267,6 +449,41 @@ export interface components {
              * @enum {string}
              */
             target: "both" | "cover_letter_plan" | "cv";
+        };
+        /** Draft */
+        Draft: {
+            /** Application Id */
+            application_id: number;
+            /** Created At */
+            created_at: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "cover_letter" | "motivation" | "application_answers" | "assessment" | "cover_letter_plan" | "cv";
+            /** Text */
+            text: string;
+            /** Version */
+            version: number;
+        };
+        /** DraftSummary */
+        DraftSummary: {
+            /** Characters */
+            characters: number;
+            /** Created At */
+            created_at: string;
+            /** Id */
+            id: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "cover_letter" | "motivation" | "application_answers" | "assessment" | "cover_letter_plan" | "cv";
+            /**
+             * Version
+             * @description 1, then one more each time a draft of this kind is saved again
+             */
+            version: number;
         };
         /** Drafted */
         Drafted: {
@@ -405,6 +622,12 @@ export interface components {
         };
         /** Posting */
         Posting: {
+            /**
+             * Archived
+             * @description Put aside: kept (the evals read it), but not listed as new
+             * @default false
+             */
+            archived: boolean;
             /** Company */
             company?: string | null;
             /** Name */
@@ -420,6 +643,12 @@ export interface components {
         };
         /** PostingSummary */
         PostingSummary: {
+            /**
+             * Archived
+             * @description Put aside: kept (the evals read it), but not listed as new
+             * @default false
+             */
+            archived: boolean;
             /** Company */
             company?: string | null;
             /** Name */
@@ -531,6 +760,18 @@ export interface components {
              */
             step: "started";
         };
+        /** StatusChange */
+        StatusChange: {
+            /** Changed At */
+            changed_at: string;
+            /** Note */
+            note?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "interested" | "applied" | "interviewing" | "offer" | "rejected" | "withdrawn";
+        };
         /**
          * StatusMessage
          * @description Sent when a stretch of work ends: where the run now stands.
@@ -548,6 +789,19 @@ export interface components {
              * @enum {string}
              */
             type: "status";
+        };
+        /** StatusUpdate */
+        StatusUpdate: {
+            /**
+             * Note
+             * @description Why it changed, e.g. 'first interview on 3 Nov'
+             */
+            note?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "interested" | "applied" | "interviewing" | "offer" | "rejected" | "withdrawn";
         };
         /**
          * StreamMessage
@@ -576,6 +830,126 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    get_applications_api_applications_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Application"][];
+                };
+            };
+        };
+    };
+    get_application_api_applications__application_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                application_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_draft_api_applications__application_id__drafts__kind__get: {
+        parameters: {
+            query?: {
+                version?: number | null;
+            };
+            header?: never;
+            path: {
+                application_id: number;
+                kind: "cover_letter" | "motivation" | "application_answers" | "assessment" | "cover_letter_plan" | "cv";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Draft"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_status_api_applications__application_id__status_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                application_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StatusUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     health_api_health_get: {
         parameters: {
             query?: never;
@@ -659,6 +1033,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Posting"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    archive_posting_api_postings__name__archive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Archive"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

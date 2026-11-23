@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Review, RunView } from "../api/client";
@@ -17,6 +17,13 @@ function view(status: RunView["status"], extra: Partial<RunView> = {}): RunView 
   return { run_id: RUN, posting: "acme_ds", status, ...extra };
 }
 
+/** The page shows the run working and has opened its events stream (an effect, so a moment later). */
+async function following(): Promise<FakeEventSource> {
+  await screen.findByRole("heading", { name: /Working/ });
+  await waitFor(() => expect(FakeEventSource.last).not.toBeNull());
+  return FakeEventSource.last!;
+}
+
 /** The server sends a message on the run's events stream. */
 function send(message: unknown) {
   act(() => FakeEventSource.last!.send(message));
@@ -30,8 +37,7 @@ describe("RunPage", () => {
     fakeApi({ [VIEW]: [ok(view("running"))] });
     render(<RunPage runId={RUN} />);
 
-    expect(await screen.findByRole("heading", { name: /Working/ })).toBeInTheDocument();
-    expect(FakeEventSource.last!.url).toBe(`/api/runs/${RUN}/events`);
+    expect((await following()).url).toBe(`/api/runs/${RUN}/events`);
     send({ type: "progress", event: { step: "extracted", requirements: 7, elapsed: 3, artifact: null } });
     expect(await screen.findByText(/7 requirements/)).toBeInTheDocument();
   });
@@ -40,7 +46,7 @@ describe("RunPage", () => {
     fakeApi({ [VIEW]: [ok(view("running")), fails(), ok(view("stopped", { error: "model went away" }))] });
     const user = userEvent.setup();
     render(<RunPage runId={RUN} />);
-    await screen.findByRole("heading", { name: /Working/ });
+    await following();
 
     send({ type: "status", status: "stopped", error: "model went away" });
 
@@ -56,7 +62,7 @@ describe("RunPage", () => {
     fakeApi({ [VIEW]: [ok(view("running")), fails(), ok(view("awaiting_review", { review: REVIEW }))] });
     const user = userEvent.setup();
     render(<RunPage runId={RUN} />);
-    await screen.findByRole("heading", { name: /Working/ });
+    await following();
 
     send({ type: "status", status: "awaiting_review" });
     await screen.findByRole("alert");
@@ -71,14 +77,13 @@ describe("RunPage", () => {
     fakeApi({ [VIEW]: [ok(view("running"))] });
     const user = userEvent.setup();
     render(<RunPage runId={RUN} />);
-    await screen.findByRole("heading", { name: /Working/ });
-    const first = FakeEventSource.last!;
+    const first = await following();
 
     act(() => first.fail(true));
     expect(await screen.findByRole("alert")).toHaveTextContent("Lost the connection");
 
     await user.click(screen.getByRole("button", { name: "Try again" }));
-    expect(FakeEventSource.last).not.toBe(first);
+    await waitFor(() => expect(FakeEventSource.last).not.toBe(first));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
@@ -108,7 +113,6 @@ describe("RunPage", () => {
     await user.click(await screen.findByRole("button", { name: "Retry" }));
 
     expect(fetch.mock.calls.some(([r]) => r.method === "POST")).toBe(true);
-    expect(await screen.findByRole("heading", { name: /Working/ })).toBeInTheDocument();
-    expect(FakeEventSource.last!.url).toBe(`/api/runs/${RUN}/events`); // following the retried work
+    expect((await following()).url).toBe(`/api/runs/${RUN}/events`); // following the retried work
   });
 });

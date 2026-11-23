@@ -20,6 +20,7 @@ from job_assistant.llm import make_model
 from job_assistant.mcp import server
 from job_assistant.workflow.graph import ApplySettings, build_apply_graph
 from job_assistant.workflow.service import ApplyService, open_checkpointer
+from job_assistant.workflow.tracker import Tracker
 
 
 @dataclass
@@ -85,4 +86,5 @@ async def open_service(choice: ModelChoice, progress: Callable[[ProgressEvent], 
                               drafts_dir=config.drafts_dir, checker_model=checker_model,
                               max_concurrency=choice.concurrency, progress=progress)
         checkpointer = await stack.enter_async_context(open_checkpointer(runs_db or config.runs_db))
-        yield ApplyService(build_apply_graph(apply, checkpointer), max_concurrency=choice.concurrency)
+        yield ApplyService(build_apply_graph(apply, checkpointer), max_concurrency=choice.concurrency,
+                           tracker=Tracker(apply.tracker))
