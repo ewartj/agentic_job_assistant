@@ -6,6 +6,12 @@ import createClient from "openapi-fetch";
 import type { components, paths } from "./schema";
 
 type Schemas = components["schemas"];
+export type Application = Schemas["Application"];
+export type ApplicationDetail = Schemas["ApplicationDetail"];
+export type ApplicationStatus = Schemas["Application"]["status"];
+export type Draft = Schemas["Draft"];
+export type DraftKind = Schemas["Draft"]["kind"];
+export type DraftSummary = Schemas["DraftSummary"];
 export type Artifact = Schemas["Artifact"];
 export type Decision = Schemas["Decision"];
 export type NewPosting = Schemas["NewPosting"];

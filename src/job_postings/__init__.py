@@ -45,6 +45,27 @@ def posting_path(directory: Path, name: str) -> Path:
     return directory / f"{name}.md"
 
 
+ARCHIVE = ".archived"  # in the postings folder: one archived posting's name per line
+
+
+def archived_postings(directory: Path) -> set[str]:
+    """Postings you've put aside. They stay saved, so the evals that read them still work."""
+    path = directory / ARCHIVE
+    return set(path.read_text(encoding="utf-8").split()) if path.exists() else set()
+
+
+def set_archived(directory: Path, name: str, archived: bool) -> None:
+    """Archive a saved posting, or bring it back. Doing it twice is the same as once."""
+    if not posting_path(directory, name).exists():  # ValueError for an unsafe name
+        raise FileNotFoundError(f"no saved posting named {name!r}")
+    names = archived_postings(directory)
+    if archived:
+        names.add(name)
+    else:
+        names.discard(name)
+    (directory / ARCHIVE).write_text("".join(f"{n}\n" for n in sorted(names)), encoding="utf-8")
+
+
 def list_postings(directory: Path) -> list[dict[str, Any]]:
     """Name and header fields of every saved posting. Read on each call, so new files show up."""
     postings = []

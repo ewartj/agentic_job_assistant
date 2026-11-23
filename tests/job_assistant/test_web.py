@@ -20,6 +20,7 @@ from job_assistant.web.app import create_app
 from job_assistant.web.schemas import StreamMessage
 from job_assistant.workflow.graph import ApplySettings, build_apply_graph
 from job_assistant.workflow.service import ApplyService, open_checkpointer
+from job_assistant.workflow.tracker import Tracker
 from tracker_server.server import mcp as tracker_mcp
 
 pytestmark = pytest.mark.anyio
@@ -65,7 +66,7 @@ def make_api(tmp_path, monkeypatch, files):
                     open_checkpointer(tmp_path / "runs.db") as checkpointer:
                 settings = ApplySettings(model=model, cv=cv, tracker=tracker, employers=employers, template=template,
                                          drafts_dir=tmp_path / "drafts", progress=progress)
-                yield ApplyService(build_apply_graph(settings, checkpointer))
+                yield ApplyService(build_apply_graph(settings, checkpointer), tracker=Tracker(tracker))
 
         app = create_app(open_service, postings_dir=tmp_path / "postings", drafts_dir=tmp_path / "drafts")
         async with app.router.lifespan_context(app), \
@@ -118,6 +119,13 @@ async def test_postings_are_saved_listed_and_read_back(make_api):
     (("post", "/api/runs", {"posting": "missing"}), 404),
     (("get", "/api/runs/no-such-run", None), 404),
     (("post", "/api/runs/no-such-run/decision", {"action": "approve"}), 404),
+    (("post", "/api/postings/missing/archive", {"archived": True}), 404),
+    (("post", "/api/postings/a.b/archive", {"archived": True}), 422),
+    (("get", "/api/applications/99", None), 404),
+    (("post", "/api/applications/99/status", {"status": "applied"}), 404),
+    (("post", "/api/applications/1/status", {"status": "hired"}), 422),  # not a status
+    (("get", "/api/applications/99/drafts/cv", None), 404),
+    (("get", "/api/applications/1/drafts/poem", None), 422),  # not a kind
 ])
 async def test_bad_requests_get_clear_status_codes(make_api, request_, code):
     method, url, body = request_
@@ -144,6 +152,44 @@ async def test_a_run_goes_from_start_to_review_to_saved(make_api):
         view = await finished(client, run_id)
         assert view["status"] == "saved" and view["application_id"] == 1
         assert [r["status"] for r in (await client.get("/api/runs")).json()] == ["saved"]
+
+
+async def test_a_saved_application_can_be_followed_and_moved_on(make_api):
+    async with make_api(GatedModel()) as client:
+        run_id = await started(client)
+        await finished(client, run_id)
+        await client.post(f"/api/runs/{run_id}/decision", json={"action": "approve"})
+        application_id = (await finished(client, run_id))["application_id"]
+
+        [listed] = (await client.get("/api/applications")).json()
+        assert (listed["id"], listed["company"], listed["posting"], listed["status"]) == \
+            (application_id, "Acme Health", "acme_eng", "interested")
+
+        detail = (await client.get(f"/api/applications/{application_id}")).json()
+        assert sorted(d["kind"] for d in detail["drafts"]) == ["assessment", "cover_letter_plan", "cv"]
+        plan = (await client.get(f"/api/applications/{application_id}/drafts/cover_letter_plan")).json()
+        assert plan["version"] == 1 and "[cv-001]" in plan["text"]
+
+        moved = await client.post(f"/api/applications/{application_id}/status",
+                                  json={"status": "applied", "note": "sent on the website"})
+        assert moved.status_code == 200 and moved.json()["status"] == "applied" and moved.json()["applied_on"]
+        assert [(h["status"], h["note"]) for h in moved.json()["history"]] == \
+            [("interested", "logged"), ("applied", "sent on the website")]
+
+        missing = await client.get(f"/api/applications/{application_id}/drafts/motivation")
+        assert missing.status_code == 404  # a kind it has no draft of
+
+
+async def test_postings_can_be_archived_and_brought_back(make_api, tmp_path):
+    async with make_api(GatedModel()) as client:
+        await client.post("/api/postings", json=POSTING)
+        archived = await client.post("/api/postings/acme_eng/archive", json={"archived": True})
+        assert archived.status_code == 200 and archived.json()["archived"] is True
+        assert [p["archived"] for p in (await client.get("/api/postings")).json()] == [True]
+        assert (tmp_path / "postings" / "acme_eng.md").exists()  # kept: the evals read it
+
+        await client.post("/api/postings/acme_eng/archive", json={"archived": False})
+        assert (await client.get("/api/postings/acme_eng")).json()["archived"] is False
 
 
 async def test_decisions_are_validated_against_the_run(make_api):

@@ -36,10 +36,15 @@ class PostingSummary(BaseModel):
     role: str | None = None
     url: str | None = None
     saved: str | None = None
+    archived: bool = Field(default=False, description="Put aside: kept (the evals read it), but not listed as new")
 
 
 class Posting(PostingSummary):
     text: str
+
+
+class Archive(BaseModel):
+    archived: bool = Field(description="true to put the posting aside, false to bring it back")
 
 
 class NewPosting(BaseModel):

@@ -23,6 +23,7 @@ from langgraph.types import Command
 from job_assistant.assessment.pipeline import Requirement
 from job_assistant.traces import Turn
 from job_assistant.workflow.models import Decision, Review, RunView
+from job_assistant.workflow.tracker import Tracker
 from job_postings import split_front_matter
 
 # The project's own types inside a run's state. Checkpoints only ever load these
@@ -64,9 +65,10 @@ async def open_checkpointer(path: Path) -> AsyncIterator[AsyncSqliteSaver]:
 
 
 class ApplyService:
-    def __init__(self, graph: Any, max_concurrency: int | None = None):
+    def __init__(self, graph: Any, max_concurrency: int | None = None, tracker: Tracker | None = None):
         self.graph = graph  # compiled with a checkpointer
         self.max_concurrency = max_concurrency  # e.g. 1 for Ollama: the letter and CV take turns
+        self.tracker = tracker  # reading and updating applications, for the web's tracker pages
         self._running: set[str] = set()
 
     @staticmethod

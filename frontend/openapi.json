@@ -1,6 +1,222 @@
 {
   "components": {
     "schemas": {
+      "Application": {
+        "properties": {
+          "applied_on": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "YYYY-MM-DD, or just YYYY-MM or YYYY for old ones",
+            "title": "Applied On"
+          },
+          "company": {
+            "title": "Company",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "posting": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The saved posting it came from, if any",
+            "title": "Posting"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "interested",
+              "applied",
+              "interviewing",
+              "offer",
+              "rejected",
+              "withdrawn"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "id",
+          "company",
+          "role",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "Application",
+        "type": "object"
+      },
+      "ApplicationDetail": {
+        "properties": {
+          "applied_on": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "YYYY-MM-DD, or just YYYY-MM or YYYY for old ones",
+            "title": "Applied On"
+          },
+          "company": {
+            "title": "Company",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "drafts": {
+            "description": "Every version of every draft, without the text",
+            "items": {
+              "$ref": "#/components/schemas/DraftSummary"
+            },
+            "title": "Drafts",
+            "type": "array"
+          },
+          "history": {
+            "description": "Every status it has had, oldest first",
+            "items": {
+              "$ref": "#/components/schemas/StatusChange"
+            },
+            "title": "History",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "posting": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The saved posting it came from, if any",
+            "title": "Posting"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "interested",
+              "applied",
+              "interviewing",
+              "offer",
+              "rejected",
+              "withdrawn"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "id",
+          "company",
+          "role",
+          "status",
+          "created_at",
+          "updated_at",
+          "history",
+          "drafts"
+        ],
+        "title": "ApplicationDetail",
+        "type": "object"
+      },
+      "Archive": {
+        "properties": {
+          "archived": {
+            "description": "true to put the posting aside, false to bring it back",
+            "title": "Archived",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "archived"
+        ],
+        "title": "Archive",
+        "type": "object"
+      },
       "Artifact": {
         "description": "One output under review: the letter plan or the CV.",
         "properties": {
@@ -179,6 +395,89 @@
           "action"
         ],
         "title": "Decision",
+        "type": "object"
+      },
+      "Draft": {
+        "properties": {
+          "application_id": {
+            "title": "Application Id",
+            "type": "integer"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "cover_letter",
+              "motivation",
+              "application_answers",
+              "assessment",
+              "cover_letter_plan",
+              "cv"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "application_id",
+          "kind",
+          "version",
+          "text",
+          "created_at"
+        ],
+        "title": "Draft",
+        "type": "object"
+      },
+      "DraftSummary": {
+        "properties": {
+          "characters": {
+            "title": "Characters",
+            "type": "integer"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "cover_letter",
+              "motivation",
+              "application_answers",
+              "assessment",
+              "cover_letter_plan",
+              "cv"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "version": {
+            "description": "1, then one more each time a draft of this kind is saved again",
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "version",
+          "characters",
+          "created_at"
+        ],
+        "title": "DraftSummary",
         "type": "object"
       },
       "Drafted": {
@@ -426,6 +725,12 @@
       },
       "Posting": {
         "properties": {
+          "archived": {
+            "default": false,
+            "description": "Put aside: kept (the evals read it), but not listed as new",
+            "title": "Archived",
+            "type": "boolean"
+          },
           "company": {
             "anyOf": [
               {
@@ -488,6 +793,12 @@
       },
       "PostingSummary": {
         "properties": {
+          "archived": {
+            "default": false,
+            "description": "Put aside: kept (the evals read it), but not listed as new",
+            "title": "Archived",
+            "type": "boolean"
+          },
           "company": {
             "anyOf": [
               {
@@ -771,6 +1082,43 @@
         "title": "Started",
         "type": "object"
       },
+      "StatusChange": {
+        "properties": {
+          "changed_at": {
+            "title": "Changed At",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "status": {
+            "enum": [
+              "interested",
+              "applied",
+              "interviewing",
+              "offer",
+              "rejected",
+              "withdrawn"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "changed_at"
+        ],
+        "title": "StatusChange",
+        "type": "object"
+      },
       "StatusMessage": {
         "description": "Sent when a stretch of work ends: where the run now stands.",
         "properties": {
@@ -807,6 +1155,39 @@
           "status"
         ],
         "title": "StatusMessage",
+        "type": "object"
+      },
+      "StatusUpdate": {
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why it changed, e.g. 'first interview on 3 Nov'",
+            "title": "Note"
+          },
+          "status": {
+            "enum": [
+              "interested",
+              "applied",
+              "interviewing",
+              "offer",
+              "rejected",
+              "withdrawn"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "StatusUpdate",
         "type": "object"
       },
       "StreamMessage": {
@@ -881,6 +1262,192 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/applications": {
+      "get": {
+        "description": "Every tracked application, most recently updated first.",
+        "operationId": "get_applications_api_applications_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Application"
+                  },
+                  "title": "Response Get Applications Api Applications Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Applications"
+      }
+    },
+    "/api/applications/{application_id}": {
+      "get": {
+        "description": "One application, with its status history and its drafts (without their text).",
+        "operationId": "get_application_api_applications__application_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "application_id",
+            "required": true,
+            "schema": {
+              "title": "Application Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Application"
+      }
+    },
+    "/api/applications/{application_id}/drafts/{kind}": {
+      "get": {
+        "description": "A draft's text: the latest version, unless one is asked for.",
+        "operationId": "get_draft_api_applications__application_id__drafts__kind__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "application_id",
+            "required": true,
+            "schema": {
+              "title": "Application Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "enum": [
+                "cover_letter",
+                "motivation",
+                "application_answers",
+                "assessment",
+                "cover_letter_plan",
+                "cv"
+              ],
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Draft"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Draft"
+      }
+    },
+    "/api/applications/{application_id}/status": {
+      "post": {
+        "description": "Move an application on, e.g. to \"applied\". Every change is kept in its history.",
+        "operationId": "update_status_api_applications__application_id__status_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "application_id",
+            "required": true,
+            "schema": {
+              "title": "Application Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StatusUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Status"
+      }
+    },
     "/api/health": {
       "get": {
         "operationId": "health_api_health_get",
@@ -994,6 +1561,56 @@
           }
         },
         "summary": "Get Posting"
+      }
+    },
+    "/api/postings/{name}/archive": {
+      "post": {
+        "description": "Put a posting aside, or bring it back. The file is kept either way.",
+        "operationId": "archive_posting_api_postings__name__archive_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Archive"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Posting"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Archive Posting"
       }
     },
     "/api/runs": {

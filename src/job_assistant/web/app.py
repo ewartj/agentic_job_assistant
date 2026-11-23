@@ -21,6 +21,7 @@ from job_assistant.web.routes import router
 from job_assistant.web.runs import PostingNotFound, RunConflict, RunManager
 from job_assistant.web.schemas import ProgressMessage
 from job_assistant.workflow.service import ApplyService, NotAwaitingReview, NotStopped, RunNotFound, current_run
+from job_assistant.workflow.tracker import ApplicationNotFound, TrackerRefused
 
 # The React dev server (stage 3). Nothing else may call the API from a browser.
 DEV_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
@@ -35,6 +36,8 @@ ERRORS: dict[type[Exception], int] = {
     NotAwaitingReview: status.HTTP_409_CONFLICT,
     NotStopped: status.HTTP_409_CONFLICT,
     RunConflict: status.HTTP_409_CONFLICT,
+    ApplicationNotFound: status.HTTP_404_NOT_FOUND,
+    TrackerRefused: status.HTTP_422_UNPROCESSABLE_CONTENT,
 }
 
 

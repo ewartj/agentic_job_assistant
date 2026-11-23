@@ -73,13 +73,30 @@ h3 {
   padding: 16px 16px 48px;
 }
 
-.brand {
-  margin: 0 0 16px;
-  font-weight: 600;
+/* The bar of pages at the top */
+.nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 20px;
+  margin: 0 0 20px;
 }
-.brand a {
-  color: var(--text);
+.brand {
+  font-weight: 600;
+  margin-right: auto;
+}
+.nav a {
+  color: var(--muted);
   text-decoration: none;
+}
+.nav a:hover {
+  color: var(--text);
+}
+.nav a[aria-current="page"] {
+  color: var(--text);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 4px;
 }
 
 /* Layout helpers */
@@ -155,6 +172,14 @@ select {
   border-radius: 6px;
   padding: 8px 10px;
   width: 100%;
+}
+label.inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+label.inline select {
+  width: auto;
 }
 label.check input {
   width: auto;
@@ -361,4 +386,58 @@ button:disabled {
   background: var(--bg);
   border-radius: 4px;
   padding: 0 4px;
+}
+
+/* Saved jobs: a heading row, then the advert to open */
+.list li.job {
+  display: block;
+}
+.job-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+}
+.job-head > span:first-child {
+  flex: 1 1 240px;
+}
+.advert summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.875rem;
+  margin-top: 4px;
+}
+.advert-text {
+  white-space: pre-wrap; /* pasted adverts keep their line breaks */
+  max-height: 24rem;
+  overflow-y: auto;
+  background: var(--bg);
+  border-radius: 6px;
+  padding: 12px;
+}
+
+/* Where an application stands */
+.app-interested {
+  background: var(--border);
+  color: var(--text);
+}
+.app-applied {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+.app-interviewing {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+.app-offer {
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+.app-rejected {
+  background: var(--bad-bg);
+  color: var(--bad);
+}
+.app-withdrawn {
+  background: var(--border);
+  color: var(--muted);
 }

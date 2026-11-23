@@ -1,7 +1,14 @@
 """Saved job postings: header parsing, safe names, saving (cv_server.postings)."""
 import pytest
 
-from job_postings import list_postings, posting_path, save_posting, split_front_matter
+from job_postings import (
+    archived_postings,
+    list_postings,
+    posting_path,
+    save_posting,
+    set_archived,
+    split_front_matter,
+)
 
 
 def test_header_is_split_from_the_posting_text():
@@ -81,3 +88,22 @@ def test_replace_still_rejects_empty_text(tmp_path):
     with pytest.raises(ValueError, match="empty"):
         save_posting(tmp_path, "acme", "  ", replace=True)
     assert "good text" in (tmp_path / "acme.md").read_text(encoding="utf-8")  # untouched
+
+
+def test_archiving_keeps_the_posting_and_can_be_undone(tmp_path):
+    save_posting(tmp_path, "acme_ds", "We need Python.")
+    save_posting(tmp_path, "globex_eng", "We need Go.")
+    set_archived(tmp_path, "acme_ds", True)
+    set_archived(tmp_path, "acme_ds", True)  # twice is the same as once
+    assert archived_postings(tmp_path) == {"acme_ds"}
+    assert [p["name"] for p in list_postings(tmp_path)] == ["acme_ds", "globex_eng"]  # still saved
+    set_archived(tmp_path, "acme_ds", False)
+    assert archived_postings(tmp_path) == set()
+
+
+def test_only_saved_postings_with_safe_names_can_be_archived(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        set_archived(tmp_path, "missing", True)
+    with pytest.raises(ValueError):
+        set_archived(tmp_path, "../escape", True)
+    assert archived_postings(tmp_path) == set()  # nothing written
