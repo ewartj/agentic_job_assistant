@@ -49,11 +49,25 @@ class ApplyState(PipelineState, total=False):
     role: str
     url: str
     assessment: str  # the verdicts as Markdown
-    letter: dict[str, Any]  # an Artifact
-    cv: dict[str, Any]  # an Artifact
-    decision: dict[str, Any]  # the latest Decision
+    # Models, so they're checked when made, not when used. Runs saved before Nov 2026 hold
+    # these as dicts: read them with artifact_in() and decision_in(), which take either.
+    letter: Artifact
+    cv: Artifact
+    decision: Decision  # the latest one
     review_round: int
     application_id: int
+
+
+def artifact_in(state: dict[str, Any], kind: ArtifactKind) -> Artifact | None:
+    """The letter or CV in a run's state - a model, or a dict in a run saved before they were models."""
+    value = state.get(KEY[kind])
+    return None if value is None else Artifact.model_validate(value)
+
+
+def decision_in(state: dict[str, Any]) -> Decision | None:
+    """The latest decision in a run's state - a model, or a dict in an older run."""
+    value = state.get("decision")
+    return None if value is None else Decision.model_validate(value)
 
 
 @dataclass
@@ -126,9 +140,9 @@ def build_apply_graph(s: ApplySettings, checkpointer: Any = None):
 
     def revision(state: ApplyState, kind: ArtifactKind) -> tuple[str, str]:
         """(notes, previous plan) when the latest decision asks to revise this artifact."""
-        decision = state.get("decision") or {}
-        if decision.get("action") == "revise" and decision.get("target") in ("both", kind):
-            return decision["notes"], (state.get(KEY[kind]) or {}).get("plan", "")
+        decision, previous = decision_in(state), artifact_in(state, kind)
+        if decision and decision.action == "revise" and decision.target in ("both", kind):
+            return decision.notes, previous.plan if previous else ""
         return "", ""
 
     def assess(state: ApplyState) -> dict[str, Any]:
@@ -143,7 +157,7 @@ def build_apply_graph(s: ApplySettings, checkpointer: Any = None):
         plan = plan_document(result, letter_title(state["company"], state["role"]))
         path = s.drafts_dir / f"{state['posting_name']}.cover_letter_plan.md"
         path.write_text(plan, encoding="utf-8")
-        return {"letter": artifact("cover_letter_plan", result, plan, path).model_dump()}
+        return {"letter": artifact("cover_letter_plan", result, plan, path)}
 
     async def cv(state: ApplyState) -> dict[str, Any]:
         notes, previous = revision(state, "cv")
@@ -156,21 +170,27 @@ def build_apply_graph(s: ApplySettings, checkpointer: Any = None):
         docx_path, plan_path, warnings = save_cv(result, s.template, s.employers, s.drafts_dir,
                                                  state["posting_name"], state["role"])
         plan = plan_path.read_text(encoding="utf-8")
-        return {"cv": artifact("cv", result, plan, plan_path, docx_path, warnings).model_dump()}
+        return {"cv": artifact("cv", result, plan, plan_path, docx_path, warnings)}
 
     def review(state: ApplyState) -> dict[str, Any]:
         # On resume, LangGraph runs this node again from the top, and interrupt() then
         # returns the Decision it was resumed with - so nothing before it may have side effects.
         round_ = state.get("review_round", 0) + 1
+        letter, cv = artifact_in(state, "cover_letter_plan"), artifact_in(state, "cv")
+        if letter is None or cv is None:
+            raise RuntimeError("review reached without both documents")  # the graph's edges rule it out
         shown = Review(run_id=state["run_id"], posting=state["posting_name"], company=state["company"],
                        role=state["role"], assessment=state.get("assessment", ""),
-                       verdicts=verdict_counts(state.get("matches", [])),
-                       artifacts=[Artifact(**state["letter"]), Artifact(**state["cv"])], round=round_)
+                       verdicts=verdict_counts(state.get("matches", [])), artifacts=[letter, cv], round=round_)
+        # What crosses the pause is plain data both ways: the Review shown, and the Decision
+        # it's resumed with (Command(resume=...)), which may come from another process.
         decision = Decision.model_validate(interrupt(shown.model_dump()))
-        return {"decision": decision.model_dump(), "review_round": round_}
+        return {"decision": decision, "review_round": round_}
 
     def after_review(state: ApplyState) -> str | list[str]:
-        decision = Decision.model_validate(state["decision"])
+        decision = decision_in(state)
+        if decision is None:
+            raise RuntimeError("no decision after the review")
         if decision.action == "approve":
             return "save"
         if decision.action == "reject":
@@ -181,8 +201,11 @@ def build_apply_graph(s: ApplySettings, checkpointer: Any = None):
         application = await call(s.tracker, "log_application", {
             "company": state["company"], "role": state["role"], "posting": state["posting_name"],
             "url": state.get("url") or None})
-        cv_text = state["cv"]["plan"] + f"\n\nWord document: {state['cv']['document_path']}\n"
-        for kind, text in (("assessment", state["assessment"]), ("cover_letter_plan", state["letter"]["plan"]),
+        letter, cv = artifact_in(state, "cover_letter_plan"), artifact_in(state, "cv")
+        if letter is None or cv is None:
+            raise RuntimeError("save reached without both documents")
+        cv_text = cv.plan + f"\n\nWord document: {cv.document_path}\n"
+        for kind, text in (("assessment", state["assessment"]), ("cover_letter_plan", letter.plan),
                            ("cv", cv_text)):
             await call(s.tracker, "save_draft", {"application_id": application["id"], "kind": kind, "text": text})
         return {"application_id": application["id"]}

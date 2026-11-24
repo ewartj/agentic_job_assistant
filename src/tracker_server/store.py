@@ -181,21 +181,29 @@ def get_application(conn: sqlite3.Connection, application_id: int) -> dict[str, 
 
 
 def save_draft(conn: sqlite3.Connection, application_id: int, kind: str, text: str) -> dict[str, Any]:
-    """Save a new version of a draft. Earlier versions are kept, never overwritten."""
+    """Save a new version of a draft. Earlier versions are kept, never overwritten.
+
+    Saving the same text as the latest version changes nothing and returns that version,
+    with created=False - so a retried save (a run that stopped part-way through saving)
+    doesn't add copies."""
     _check(kind, DRAFT_KINDS, "kind")
     if not text.strip():
         raise ValueError("draft text is empty")
     _require_application(conn, application_id)
-    with conn:
-        (version,) = conn.execute(
-            "SELECT COALESCE(MAX(version), 0) + 1 FROM drafts WHERE application_id = ? AND kind = ?",
+    with conn:  # one transaction: the check and the insert see the same latest version
+        latest = conn.execute(
+            "SELECT id, version, text FROM drafts WHERE application_id = ? AND kind = ? ORDER BY version DESC LIMIT 1",
             (application_id, kind),
         ).fetchone()
+        if latest and latest["text"] == text:
+            return {"id": latest["id"], "application_id": application_id, "kind": kind,
+                    "version": latest["version"], "created": False}
+        version = latest["version"] + 1 if latest else 1
         cur = conn.execute(
             "INSERT INTO drafts (application_id, kind, version, text, created_at) VALUES (?, ?, ?, ?, ?)",
             (application_id, kind, version, text, _now()),
         )
-    return {"id": cur.lastrowid, "application_id": application_id, "kind": kind, "version": version}
+    return {"id": cur.lastrowid, "application_id": application_id, "kind": kind, "version": version, "created": True}
 
 
 def get_draft(conn: sqlite3.Connection, application_id: int, kind: str, version: int | None = None) -> dict[str, Any]:

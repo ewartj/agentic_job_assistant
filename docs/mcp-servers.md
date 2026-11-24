@@ -40,7 +40,7 @@ It keeps job applications, their status history and versioned drafts in SQLite (
 |---|---|---|
 | `log_application(company, role, ...)` | Yes, idempotent | Records an application. Logging the same company and role again returns the existing record with `created: false`. |
 | `update_status(application_id, status, note)` | Yes, idempotent | Changes the status (interested → applied → interviewing → offer / rejected / withdrawn). Every change is kept in the history. |
-| `save_draft(application_id, kind, text)` | Yes | Saves a cover letter, motivation or application answers. Saving again adds a new version; nothing is overwritten. |
+| `save_draft(application_id, kind, text)` | Yes, idempotent | Saves a cover letter, motivation or application answers. Saving different text adds a new version; nothing is overwritten. Saving the same text as the latest version returns it with `created: false`, so a retried save adds no copies. |
 | `list_applications(status)`, `get_application(id)`, `get_draft(id, kind, version)` | No | Read applications, history and drafts |
 
 What's different about a server whose tools write:

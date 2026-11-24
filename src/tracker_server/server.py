@@ -118,11 +118,13 @@ def get_application(application_id: int) -> dict[str, Any]:
 
 
 @mcp.tool(annotations=ToolAnnotations(read_only_hint=False, destructive_hint=False,
-                                      idempotent_hint=False, open_world_hint=False))
+                                      idempotent_hint=True, open_world_hint=False))
 def save_draft(application_id: int, kind: DraftKind, text: str) -> dict[str, Any]:
     """Save a draft cover letter or application answers for an application.
 
-    Saving again adds a new version; earlier versions are kept.
+    Saving different text adds a new version; earlier versions are kept. Saving the same
+    text as the latest version changes nothing, and that version comes back with
+    `created: false`.
 
     Args:
         application_id: The application's `id`.

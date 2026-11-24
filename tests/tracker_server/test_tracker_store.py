@@ -122,6 +122,23 @@ def test_saving_a_draft_again_adds_a_version(conn):
     assert store.get_draft(conn, app["id"], "cover_letter", version=1)["text"] == "Dear Acme, first"
 
 
+def test_saving_the_same_text_again_adds_nothing(conn):
+    app, _ = log(conn)
+    first = store.save_draft(conn, app["id"], "cover_letter", "Dear Acme")
+    again = store.save_draft(conn, app["id"], "cover_letter", "Dear Acme")  # e.g. a retried save
+    assert (first["created"], again["created"]) == (True, False)
+    assert again["id"] == first["id"] and again["version"] == 1
+    assert len(store.get_application(conn, app["id"])["drafts"]) == 1
+
+
+def test_going_back_to_earlier_text_is_a_new_version(conn):
+    """Only the latest version is compared: returning to an older wording is a real change."""
+    app, _ = log(conn)
+    for text in ("first", "second", "first"):
+        saved = store.save_draft(conn, app["id"], "cover_letter", text)
+    assert saved["version"] == 3 and saved["created"]
+
+
 def test_versions_are_counted_per_kind(conn):
     app, _ = log(conn)
     store.save_draft(conn, app["id"], "cover_letter", "letter")
