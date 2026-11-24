@@ -34,6 +34,11 @@ updates:
     groups:
       npm-minor-patch:
         update-types: [minor, patch]
+    ignore:
+      # openapi-typescript (which writes src/api/schema.d.ts) needs TypeScript 5. Take the
+      # next major by hand, once openapi-typescript supports it.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: deps
     open-pull-requests-limit: 5

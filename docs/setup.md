@@ -144,7 +144,7 @@ cd frontend && npm run check && npm test
   - large files;
   - anything under `data/` or `.env`;
   - local paths, private IP addresses and Anthropic keys.
-- **Dependabot** checks the Actions, uv and npm dependencies weekly. Updates are reviewed and merged by hand, never automatically.
+- **Dependabot** checks the Actions, uv and npm dependencies weekly. Updates are reviewed and merged by hand, never automatically. It skips major TypeScript versions, since `openapi-typescript` needs TypeScript 5.
 
 ## Review agents
 
