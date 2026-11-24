@@ -30,7 +30,7 @@ async def test_write_and_read_tools_are_annotated():
     assert not any(tools[n].read_only_hint for n in writes)
     assert not any(tools[n].destructive_hint for n in writes)  # nothing deletes or overwrites
     assert tools["log_application"].idempotent_hint
-    assert not tools["save_draft"].idempotent_hint  # each call adds a version
+    assert tools["save_draft"].idempotent_hint  # the same text again adds nothing
 
 
 async def test_statuses_are_an_enum_in_the_schema():

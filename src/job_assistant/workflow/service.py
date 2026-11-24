@@ -22,7 +22,8 @@ from langgraph.types import Command
 
 from job_assistant.assessment.pipeline import Requirement
 from job_assistant.traces import Turn
-from job_assistant.workflow.models import Decision, Review, RunView
+from job_assistant.workflow.graph import decision_in
+from job_assistant.workflow.models import Artifact, Decision, Review, RunView
 from job_assistant.workflow.tracker import Tracker
 from job_postings import split_front_matter
 
@@ -30,7 +31,7 @@ from job_postings import split_front_matter
 # (plus LangGraph's and the standard ones), so a tampered database can't make the
 # loader build arbitrary objects. Built from the classes rather than written as module
 # paths, so moving a class can't silently turn it into a plain dict on resume.
-CHECKPOINT_TYPES = [(cls.__module__, cls.__name__) for cls in (Requirement, Turn)]
+CHECKPOINT_TYPES = [(cls.__module__, cls.__name__) for cls in (Requirement, Turn, Artifact, Decision)]
 
 
 # The run whose graph is executing in this task. Graph nodes run in tasks created
@@ -124,7 +125,7 @@ class ApplyService:
             view.status, view.review = "awaiting_review", Review.model_validate(snapshot.interrupts[0].value)
         elif snapshot.next:  # steps left but not paused: still going, or it failed part-way
             view.status = "running" if run_id in self._running else "stopped"
-        elif (values.get("decision") or {}).get("action") == "reject":
+        elif (decision := decision_in(values)) and decision.action == "reject":
             view.status = "rejected"
         return view
 

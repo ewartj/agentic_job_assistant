@@ -79,9 +79,7 @@ Done:
 - [x] React review screen: paste a job, follow progress, review the assessment, letter plan and CV, then decide
 - [x] Review agents before every push (security, backend, frontend, tests & docs), on a Claude plan or a local model
 - [x] Saved jobs and tracker pages: each job's latest outcome, archiving, applications with their history, status changes and drafts
-
-Web app:
-- [ ] Tidy-ups: an idempotent tracker save, and typed graph state
+- [x] Tidy-ups: an idempotent tracker save, and typed graph state
 
 Then:
 - [ ] Embedding search alongside keywords, to catch evidence phrased differently from the query

@@ -28,14 +28,28 @@ def setup(tmp_path, monkeypatch, files):
     return tmp_path, posting, template, employers
 
 
+class DropsOnce:
+    """The tracker, with the connection dropping once at a chosen call - as when job-web
+    stops, or the server crashes, part-way through saving."""
+
+    def __init__(self, tracker, tool: str, kind: str):
+        self.tracker, self.tool, self.kind, self.dropped = tracker, tool, kind, False
+
+    async def call_tool(self, tool, args):
+        if not self.dropped and (tool, args.get("kind")) == (self.tool, self.kind):
+            self.dropped = True
+            raise ConnectionError("tracker-server went away")
+        return await self.tracker.call_tool(tool, args)
+
+
 @asynccontextmanager
-async def service(setup, model):
+async def service(setup, model, wrap_tracker=lambda tracker: tracker):
     """An ApplyService over the given model; a new one each time, sharing the database on disk."""
     tmp_path, _, template, employers = setup
     async with Client(cv_mcp) as cv, Client(tracker_mcp) as tracker, \
             open_checkpointer(tmp_path / "runs.db") as checkpointer:
-        settings = ApplySettings(model=model, cv=cv, tracker=tracker, employers=employers, template=template,
-                                 drafts_dir=tmp_path / "drafts")
+        settings = ApplySettings(model=model, cv=cv, tracker=wrap_tracker(tracker), employers=employers,
+                                 template=template, drafts_dir=tmp_path / "drafts")
         yield ApplyService(build_apply_graph(settings, checkpointer)), tracker
 
 
@@ -73,6 +87,25 @@ async def test_approving_saves_the_application_and_all_three_drafts(setup):
         detail = (await tracker.call_tool("get_application", {"application_id": app["id"]})).structured_content
         assert sorted(d["kind"] for d in detail["drafts"]) == ["assessment", "cover_letter_plan", "cv"]
         assert view.application_id == app["id"]
+
+
+async def test_a_save_retried_after_failing_part_way_saves_each_draft_once(setup):
+    def drops(tracker):
+        return DropsOnce(tracker, "save_draft", "cv")  # the last of the three drafts
+
+    async with service(setup, ApplyModel(), drops) as (svc, tracker):
+        paused = await svc.start(setup[1])
+        with pytest.raises(ConnectionError):
+            await svc.decide(paused.run_id, Decision(action="approve"))
+        assert (await svc.view(paused.run_id)).status == "stopped"
+
+        view = await svc.retry(paused.run_id)  # save runs again from the top
+
+        assert view.status == "saved"
+        (app,) = await applications(tracker)
+        detail = (await tracker.call_tool("get_application", {"application_id": app["id"]})).structured_content
+        assert sorted((d["kind"], d["version"]) for d in detail["drafts"]) == \
+            [("assessment", 1), ("cover_letter_plan", 1), ("cv", 1)]
 
 
 async def test_rejecting_writes_nothing(setup):
@@ -137,3 +170,30 @@ async def test_a_resumed_run_gets_its_own_types_back_not_dicts(setup):
         state = (await svc.graph.aget_state(svc._config(run_id))).values
         assert type(state["matches"][0]["requirement"]).__name__ == "Requirement"
         assert type(state["extract_turn"]).__name__ == "Turn"
+        assert type(state["letter"]).__name__ == type(state["cv"]).__name__ == "Artifact"
+
+        await svc.decide(run_id, Decision(action="revise", notes="shorter", target="cv"))
+        state = (await svc.graph.aget_state(svc._config(run_id))).values
+        assert type(state["decision"]).__name__ == "Decision"
+
+
+async def test_a_run_saved_before_the_state_held_models_still_carries_on(setup):
+    """Runs paused before the letter, CV and decision were models hold them as dicts."""
+    model = ApplyModel()
+    async with service(setup, model) as (svc, tracker):
+        run_id = (await svc.start(setup[1])).run_id
+        config = svc._config(run_id)
+        state = (await svc.graph.aget_state(config)).values
+        # Put the run back as an older version saved it: plain dicts, and a revise decision.
+        old = {"letter": state["letter"].model_dump(), "cv": state["cv"].model_dump(),
+               "decision": {"action": "revise", "notes": "mention Terraform", "target": "cv"}}
+        await svc.graph.aupdate_state(config, old, as_node="cv")
+        assert isinstance((await svc.graph.aget_state(config)).values["letter"], dict)
+
+        # Rewritten as cv's output, the run now stands before the review: carrying on runs
+        # the review from the old dicts, then the save after you approve.
+        view = await svc.retry(run_id)
+        assert view.status == "awaiting_review" and view.review.artifacts[0].kind == "cover_letter_plan"
+        view = await svc.decide(run_id, Decision(action="approve"))
+
+        assert view.status == "saved" and len(await applications(tracker)) == 1
